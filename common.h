@@ -1,0 +1,194 @@
+#ifndef _NWIF_COMMON_H
+#define _NWIF_COMMON_H
+
+#include <nwif/config.h>
+#include <nwif/nwif.h>
+#include <kvstore/autoidx.h>
+#include <net/if.h>
+
+#if defined(CONFIG_NWIF_ASSERT)
+
+#include <utils/assert.h>
+
+#define nwif_assert(_expr) \
+	uassert("nwif", _expr)
+
+#else  /* !defined(CONFIG_NWIF_ASSERT) */
+
+#define nwif_assert(_expr)
+
+#endif /* defined(CONFIG_NWIF_ASSERT) */
+
+struct nwif_conf_repo {
+	struct kvs_store iface;
+	struct kvs_depot depot;
+};
+
+enum nwif_attr_type {
+	NWIF_NAME_ATTR       = (1U << 0),
+	NWIF_OPER_STATE_ATTR = (1U << 1),
+	NWIF_MTU_ATTR        = (1U << 2),
+	NWIF_SYSPATH_ATTR    = (1U << 3),
+	NWIF_HWADDR_ATTR     = (1U << 4),
+	NWIF_ATTR_NR
+};
+
+extern int
+nwif_iface_probe_sysid(const char *syspath);
+
+/******************************************************************************
+ * Base interface state utils
+ ******************************************************************************/
+
+struct nwif_iface_state {
+	int sys_id;
+};
+
+static inline int
+nwif_iface_state_get_id(const struct nwif_iface_state *state)
+{
+	nwif_assert(state);
+	nwif_assert(state->sys_id > 0);
+
+	return state->sys_id;
+}
+
+static inline void
+nwif_iface_state_init(struct nwif_iface_state *state, int sys_id)
+{
+	nwif_assert(state);
+	nwif_assert(sys_id > 0);
+
+	state->sys_id = sys_id;
+}
+
+/******************************************************************************
+ * Base interface configuration utils
+ ******************************************************************************/
+
+enum nwif_iface_conf_state {
+	NWIF_IFACE_CONF_EMPTY_STATE,
+	NWIF_IFACE_CONF_CLEAN_STATE,
+	NWIF_IFACE_CONF_DIRTY_STATE,
+	NWIF_IFACE_CONF_FAIL_STATE
+};
+
+struct nwif_iface_conf_data {
+	enum nwif_iface_type type;
+	unsigned int         attr_mask;
+	char                 name[IFNAMSIZ];
+	uint8_t              oper_state;
+	uint32_t             mtu;
+};
+
+struct nwif_iface_conf {
+	enum nwif_iface_conf_state  state;
+	struct kvs_autoidx_id       id;
+	struct nwif_iface_conf_data data[0];
+};
+
+#define nwif_iface_conf_assert(_conf) \
+	nwif_assert((_conf)->data[0].type >= 0); \
+	nwif_assert((_conf)->data[0].type < NWIF_TYPE_NR); \
+	nwif_assert(!nwif_iface_conf_has_attr(_conf, NWIF_NAME_ATTR) || \
+	            (unet_check_iface_name((_conf)->data[0].name) > 0)); \
+	nwif_assert(!nwif_iface_conf_has_attr(_conf, NWIF_OPER_STATE_ATTR) || \
+	            nwif_iface_oper_state_isok(conf->data[0].oper_state)); \
+	nwif_assert(!nwif_iface_conf_has_attr(_conf, NWIF_MTU_ATTR) || \
+	            unet_mtu_isok(conf->data[0].mtu))
+
+static inline bool
+nwif_iface_conf_data_has_attr(const struct nwif_iface_conf_data *data,
+                              unsigned int                       attr_mask)
+{
+	nwif_assert(data);
+	nwif_assert(attr_mask);
+
+	return !!(data->attr_mask & attr_mask);
+}
+
+static inline bool
+nwif_iface_conf_has_attr(const struct nwif_iface_conf *conf,
+                         unsigned int                  attr_mask)
+{
+	return nwif_iface_conf_data_has_attr(conf->data, attr_mask);
+}
+
+static inline void
+nwif_iface_conf_set_attr(struct nwif_iface_conf *conf, enum nwif_attr_type attr)
+{
+	nwif_assert(conf);
+	nwif_assert(attr);
+	nwif_assert(attr < NWIF_ATTR_NR);
+
+	conf->data[0].attr_mask |= attr;
+	conf->state = NWIF_IFACE_CONF_DIRTY_STATE;
+}
+
+extern int
+nwif_iface_conf_check_data(const struct kvs_autoidx_desc *desc,
+                           enum nwif_iface_type           type,
+                           size_t                         size);
+
+static inline void
+nwif_iface_conf_init(struct nwif_iface_conf *conf, enum nwif_iface_type type)
+{
+	conf->state = NWIF_IFACE_CONF_EMPTY_STATE;
+	conf->id = KVS_AUTOIDX_NONE;
+	conf->data[0].type = type;
+	conf->data[0].attr_mask = 0U;
+}
+
+extern int
+nwif_iface_conf_open(struct kvs_store       *store,
+                     const struct kvs_depot *depot,
+                     const struct kvs_xact  *xact);
+
+extern int
+nwif_iface_conf_close(const struct kvs_store *store);
+
+/******************************************************************************
+ * Interface fabrics
+ ******************************************************************************/
+
+#if defined(CONFIG_NWIF_ETHER)
+
+extern int
+nwif_ether_conf_save(struct nwif_iface_conf *conf,
+                     const struct kvs_xact  *xact,
+                     struct nwif_conf_repo  *repo);
+
+extern int
+nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf,
+                               const struct kvs_autoidx_desc *desc);
+
+extern struct nwif_iface_conf *
+nwif_ether_conf_create_from_desc(const struct kvs_autoidx_desc *desc);
+
+#else /* !defined(CONFIG_NWIF_ETHER) */
+
+static inline int
+nwif_ether_conf_save(struct nwif_iface_conf *conf __unused,
+                     const struct kvs_xact  *xact __unused,
+                     struct nwif_conf_repo  *repo __unused)
+{
+	return -ENOSYS;
+}
+
+static inline int
+nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf __unused,
+                               const struct kvs_autoidx_desc *desc __unused)
+{
+	return -ENOSYS;
+}
+
+static inline struct nwif_iface_conf *
+nwif_ether_conf_create_from_desc(const struct kvs_autoidx_desc *desc __unused)
+{
+	errno = ENOSYS;
+	return NULL;
+}
+
+#endif /* defined(CONFIG_NWIF_ETHER) */
+
+#endif /* _NWIF_COMMON_H */

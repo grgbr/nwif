@@ -1,0 +1,17 @@
+config NWIF_ASSERT
+	bool "Assertion"
+	default n
+	help
+	  Build nwif library with internal assertions.
+
+config NWIF_BTRACE
+	bool "Backtrace support"
+	default n
+	help
+	  Build kvstore library with support for libbtrace.
+
+config NWIF_ETHER
+	bool "Ethernet interface"
+	default y
+	help
+	  Build nwif library with ethernet network interface support.
