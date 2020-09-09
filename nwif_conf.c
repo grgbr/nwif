@@ -458,40 +458,46 @@ nwif_conf_clui_parse_ether_syspath(const struct clui_parser *parser,
 static int
 nwif_conf_clui_parse_ether_hwaddr(const struct clui_cmd *cmd,
                                   struct clui_parser    *parser,
-                                  const char            *hwaddr,
+                                  const char            *arg,
                                   void                  *ctx)
 {
 	nwif_conf_clui_assert(cmd);
 	nwif_conf_clui_assert(parser);
-	nwif_conf_clui_assert(hwaddr);
+	nwif_conf_clui_assert(arg);
 	nwif_conf_clui_assert(ctx);
 
-	struct ether_addr       eaddr;
+	int                     err;
+	struct ether_addr       addr;
+	const char             *reason;
 	struct nwif_iface_conf *conf = ((struct nwif_conf_clui_ctx *)
 	                                ctx)->iface_conf;
 
 	nwif_conf_clui_assert(conf);
 
-	if (!ether_aton_r(hwaddr, &eaddr)) {
-		clui_err(parser,
-		         "invalid hardware address '%.*s': bad EUI-48 format.",
-		         UNET_HWADDR_STRING_MAX - 1,
-		         hwaddr);
-		return -EINVAL;
+	err = nwif_ui_parse_hwaddr(arg, &addr);
+	switch (err) {
+	case 0:
+		nwif_ether_conf_set_hwaddr(nwif_ether_conf_from_iface(conf),
+		                           &addr);
+		return 0;
+
+	case -EINVAL:
+		reason = "invalid hardware address '%.*s': bad EUI-48 format.";
+		break;
+
+	case -EPERM:
+		reason = "invalid hardware address '%.*s': "
+		         "not locally administered and/or unicast.";
+		break;
+
+	default:
+		err = -EIO;
+		reason = "invalid hardware address '%.*s': unknown failure";
 	}
 
-	if (unet_hwaddr_is_uaa(&eaddr) || unet_hwaddr_is_mcast(&eaddr)) {
-		clui_err(parser,
-		         "invalid hardware address '%.*s': "
-		         "not locally administered and/or unicast.",
-		         UNET_HWADDR_STRING_MAX - 1,
-		         hwaddr);
-		return -EPERM;
-	}
+	clui_err(parser, reason, UNET_HWADDR_STRING_MAX - 1, arg);
 
-	nwif_ether_conf_set_hwaddr(nwif_ether_conf_from_iface(conf), &eaddr);
-
-	return 0;
+	return err;
 }
 
 static const struct clui_kword_parm nwif_conf_clui_ether_hwaddr_parm = {

@@ -4,6 +4,8 @@
 #include <nwif/nwif.h>
 #include <sys/types.h>
 
+struct ether_addr;
+
 extern const char *
 nwif_ui_get_iface_type_label(enum nwif_iface_type type);
 
@@ -24,5 +26,8 @@ nwif_ui_normalize_syspath(const char *arg, char **syspath);
 
 extern ssize_t
 nwif_ui_resolve_syspath(const char *arg, char **syspath);
+
+extern int
+nwif_ui_parse_hwaddr(const char *arg, struct ether_addr *addr);
 
 #endif /* _NWIF_UI_H */

@@ -92,3 +92,18 @@ nwif_ui_resolve_syspath(const char *arg, char **syspath)
 {
 	return unet_resolve_iface_syspath(arg, syspath);
 }
+
+int
+nwif_ui_parse_hwaddr(const char *arg, struct ether_addr *addr)
+{
+	nwif_assert(arg);
+	nwif_assert(addr);
+
+	if (!ether_aton_r(arg, addr))
+		return -EINVAL;
+
+	if (unet_hwaddr_is_uaa(addr) || unet_hwaddr_is_mcast(addr))
+		return -EPERM;
+
+	return 0;
+}
