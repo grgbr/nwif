@@ -2,12 +2,12 @@
 #define _NWIF_CONF_H
 
 #include <nwif/nwif.h>
-#include <kvstore/autoidx.h>
+#include <kvstore/autorec.h>
 
 struct nwif_conf_repo;
 struct nwif_iface_conf;
 
-extern struct kvs_autoidx_id
+extern struct kvs_autorec_id
 nwif_iface_conf_get_id(const struct nwif_iface_conf *conf);
 
 extern enum nwif_iface_type
@@ -46,10 +46,10 @@ nwif_iface_conf_reload(struct nwif_iface_conf *conf,
                        struct nwif_conf_repo  *repo);
 
 extern struct nwif_iface_conf *
-nwif_iface_conf_create_from_desc(const struct kvs_autoidx_desc *desc);
+nwif_iface_conf_create_from_desc(const struct kvs_autorec_desc *desc);
 
 extern struct nwif_iface_conf *
-nwif_iface_conf_create_byid(struct kvs_autoidx_id        id,
+nwif_iface_conf_create_byid(struct kvs_autorec_id        id,
                             const struct kvs_xact       *xact,
                             const struct nwif_conf_repo *repo);
 
@@ -58,11 +58,11 @@ nwif_iface_conf_destroy(struct nwif_iface_conf *conf);
 
 extern int
 nwif_iface_conf_iter_first(const struct kvs_iter   *iter,
-                           struct kvs_autoidx_desc *desc);
+                           struct kvs_autorec_desc *desc);
 
 extern int
 nwif_iface_conf_iter_next(const struct kvs_iter   *iter,
-                          struct kvs_autoidx_desc *desc);
+                          struct kvs_autorec_desc *desc);
 
 extern int
 nwif_iface_conf_init_iter(const struct nwif_conf_repo *repo,

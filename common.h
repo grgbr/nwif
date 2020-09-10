@@ -3,7 +3,7 @@
 
 #include <nwif/config.h>
 #include <nwif/nwif.h>
-#include <kvstore/autoidx.h>
+#include <kvstore/autorec.h>
 #include <net/if.h>
 
 #if defined(CONFIG_NWIF_ASSERT)
@@ -78,7 +78,7 @@ struct nwif_iface_conf_data {
 
 struct nwif_iface_conf {
 	enum nwif_iface_conf_state  state;
-	struct kvs_autoidx_id       id;
+	struct kvs_autorec_id       id;
 	struct nwif_iface_conf_data data[0];
 };
 
@@ -122,7 +122,7 @@ nwif_iface_conf_set_attr(struct nwif_iface_conf *conf, enum nwif_attr_type attr)
 }
 
 extern int
-nwif_iface_conf_check_data(const struct kvs_autoidx_desc *desc,
+nwif_iface_conf_check_data(const struct kvs_autorec_desc *desc,
                            enum nwif_iface_type           type,
                            size_t                         size);
 
@@ -130,7 +130,7 @@ static inline void
 nwif_iface_conf_init(struct nwif_iface_conf *conf, enum nwif_iface_type type)
 {
 	conf->state = NWIF_IFACE_CONF_EMPTY_STATE;
-	conf->id = KVS_AUTOIDX_NONE;
+	conf->id = KVS_AUTOREC_NONE;
 	conf->data[0].type = type;
 	conf->data[0].attr_mask = 0U;
 }
@@ -176,10 +176,10 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf,
 
 extern int
 nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf,
-                               const struct kvs_autoidx_desc *desc);
+                               const struct kvs_autorec_desc *desc);
 
 extern struct nwif_iface_conf *
-nwif_ether_conf_create_from_desc(const struct kvs_autoidx_desc *desc);
+nwif_ether_conf_create_from_desc(const struct kvs_autorec_desc *desc);
 
 #else /* !defined(CONFIG_NWIF_ETHER) */
 
@@ -193,13 +193,13 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf __unused,
 
 static inline int
 nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf __unused,
-                               const struct kvs_autoidx_desc *desc __unused)
+                               const struct kvs_autorec_desc *desc __unused)
 {
 	return -ENOSYS;
 }
 
 static inline struct nwif_iface_conf *
-nwif_ether_conf_create_from_desc(const struct kvs_autoidx_desc *desc __unused)
+nwif_ether_conf_create_from_desc(const struct kvs_autorec_desc *desc __unused)
 {
 	errno = ENOSYS;
 	return NULL;

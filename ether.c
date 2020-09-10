@@ -110,16 +110,16 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf,
 	if (!nwif_iface_conf_has_attr(conf, NWIF_SYSPATH_ATTR))
 		return -ENODEV;
 
-	if (!kvs_autoidx_id_isok(conf->id)) {
-		err = kvs_autoidx_add(&repo->ifaces.data,
+	if (!kvs_autorec_id_isok(conf->id)) {
+		err = kvs_autorec_add(&repo->ifaces.data,
 		                      xact,
 		                      &conf->id,
 		                      data,
 		                      sizeof(*data));
-		kvs_assert(err || kvs_autoidx_id_isok(conf->id));
+		kvs_assert(err || kvs_autorec_id_isok(conf->id));
 	}
 	else
-		err = kvs_autoidx_update(&repo->ifaces.data,
+		err = kvs_autorec_update(&repo->ifaces.data,
 		                         xact,
 		                         conf->id,
 		                         data,
@@ -130,7 +130,7 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf,
 
 int
 nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf,
-                               const struct kvs_autoidx_desc *desc)
+                               const struct kvs_autorec_desc *desc)
 {
 	const struct nwif_ether_conf_data *data;
 	int                                err;
@@ -160,7 +160,7 @@ nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf,
 }
 
 struct nwif_iface_conf *
-nwif_ether_conf_create_from_desc(const struct kvs_autoidx_desc *desc)
+nwif_ether_conf_create_from_desc(const struct kvs_autorec_desc *desc)
 {
 	struct nwif_iface_conf *conf;
 	int                     err;

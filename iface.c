@@ -95,7 +95,7 @@ free:
 	nwif_assert((_conf)->state != NWIF_IFACE_CONF_FAIL_STATE); \
 	nwif_iface_conf_assert_data((_conf)->data)
 
-struct kvs_autoidx_id
+struct kvs_autorec_id
 nwif_iface_conf_get_id(const struct nwif_iface_conf *conf)
 {
 	nwif_iface_conf_assert_get(conf);
@@ -186,7 +186,7 @@ nwif_iface_conf_set_mtu(struct nwif_iface_conf *conf, uint32_t mtu)
 }
 
 int
-nwif_iface_conf_check_data(const struct kvs_autoidx_desc *desc,
+nwif_iface_conf_check_data(const struct kvs_autorec_desc *desc,
                            enum nwif_iface_type           type,
                            size_t                         size)
 {
@@ -223,16 +223,16 @@ nwif_iface_conf_check_data(const struct kvs_autoidx_desc *desc,
 
 int
 nwif_iface_conf_iter_first(const struct kvs_iter   *iter,
-                           struct kvs_autoidx_desc *desc)
+                           struct kvs_autorec_desc *desc)
 {
-	return kvs_autoidx_iter_first(iter, desc);
+	return kvs_autorec_iter_first(iter, desc);
 }
 
 int
 nwif_iface_conf_iter_next(const struct kvs_iter   *iter,
-                          struct kvs_autoidx_desc *desc)
+                          struct kvs_autorec_desc *desc)
 {
-	return kvs_autoidx_iter_next(iter, desc);
+	return kvs_autorec_iter_next(iter, desc);
 }
 
 int
@@ -240,13 +240,13 @@ nwif_iface_conf_init_iter(const struct nwif_conf_repo *repo,
                           const struct kvs_xact       *xact,
                           struct kvs_iter             *iter)
 {
-	return kvs_autoidx_init_iter(&repo->ifaces.data, xact, iter);
+	return kvs_autorec_init_iter(&repo->ifaces.data, xact, iter);
 }
 
 int
 nwif_iface_conf_fini_iter(const struct kvs_iter *iter)
 {
-	return kvs_autoidx_fini_iter(iter);
+	return kvs_autorec_fini_iter(iter);
 }
 
 int
@@ -298,10 +298,10 @@ nwif_iface_conf_save(struct nwif_iface_conf *conf,
 }
 
 static int
-nwif_iface_conf_check_desc(const struct kvs_autoidx_desc *desc)
+nwif_iface_conf_check_desc(const struct kvs_autorec_desc *desc)
 {
 	nwif_assert(desc);
-	nwif_assert(kvs_autoidx_id_isok(desc->id));
+	nwif_assert(kvs_autorec_id_isok(desc->id));
 
 	const struct nwif_iface_conf_data *data;
 
@@ -325,10 +325,10 @@ nwif_iface_conf_reload(struct nwif_iface_conf *conf,
 	nwif_assert(conf->data[0].type >= 0);
 	nwif_assert(conf->data[0].type < NWIF_TYPE_NR);
 
-	struct kvs_autoidx_desc desc;
+	struct kvs_autorec_desc desc;
 	int                     ret;
 
-	ret = kvs_autoidx_get_desc(&repo->ifaces.data, xact, conf->id, &desc);
+	ret = kvs_autorec_get_desc(&repo->ifaces.data, xact, conf->id, &desc);
 	if (ret)
 		return ret;
 
@@ -346,7 +346,7 @@ nwif_iface_conf_reload(struct nwif_iface_conf *conf,
 }
 
 struct nwif_iface_conf *
-nwif_iface_conf_create_from_desc(const struct kvs_autoidx_desc *desc)
+nwif_iface_conf_create_from_desc(const struct kvs_autorec_desc *desc)
 {
 	int ret;
 
@@ -367,14 +367,14 @@ nwif_iface_conf_create_from_desc(const struct kvs_autoidx_desc *desc)
 }
 
 struct nwif_iface_conf *
-nwif_iface_conf_create_byid(struct kvs_autoidx_id        id,
+nwif_iface_conf_create_byid(struct kvs_autorec_id        id,
                             const struct kvs_xact       *xact,
                             const struct nwif_conf_repo *repo)
 {
-	struct kvs_autoidx_desc desc;
+	struct kvs_autorec_desc desc;
 	int                     err;
 
-	err = kvs_autoidx_get_desc(&repo->ifaces.data, xact, id, &desc);
+	err = kvs_autorec_get_desc(&repo->ifaces.data, xact, id, &desc);
 	if (err) {
 		errno = -err;
 		return NULL;
@@ -426,7 +426,7 @@ nwif_iface_conf_open_table(struct nwif_iface_conf_table *table,
 	int err;
 
 	table->open_cnt = 0;
-	err = kvs_autoidx_open(&table->data,
+	err = kvs_autorec_open(&table->data,
 	                       depot,
 	                       xact,
 	                       NWIF_IFACE_CONF_BASENAME ".db",
@@ -483,9 +483,9 @@ nwif_iface_conf_close_table(struct nwif_iface_conf_table *table)
 		kvs_close_index(&table->idx[--table->open_cnt]);
 
 	if (!ret)
-		ret = kvs_autoidx_close(&table->data);
+		ret = kvs_autorec_close(&table->data);
 	else
-		kvs_autoidx_close(&table->data);
+		kvs_autorec_close(&table->data);
 
 	return ret;
 }

@@ -798,7 +798,7 @@ nwif_conf_clui_render_iface(struct libscols_table        *table,
                             const struct nwif_iface_conf *iface)
 {
 	struct libscols_line         *line;
-	struct kvs_autoidx_id         id;
+	struct kvs_autorec_id         id;
 	char                         *str;
 	int                           err;
 	enum nwif_iface_type          type;
@@ -879,7 +879,7 @@ nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 
 	struct libscols_table   *tbl;
 	struct kvs_iter          iter;
-        struct kvs_autoidx_desc  desc;
+        struct kvs_autorec_desc  desc;
 	int                      err;
 
 	err = nwif_iface_conf_init_iter(session->repo, &session->xact, &iter);

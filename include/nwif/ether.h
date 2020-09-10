@@ -2,7 +2,7 @@
 #define _NWIF_ETHER_H
 
 #include <nwif/nwif.h>
-#include <kvstore/autoidx.h>
+#include <kvstore/autorec.h>
 
 struct nwif_iface_conf;
 struct nwif_ether_conf;
