@@ -94,7 +94,7 @@ nwif_conf_open(struct nwif_conf_repo *repo,
                mode_t                 mode);
 
 extern int
-nwif_conf_close(const struct nwif_conf_repo *repo);
+nwif_conf_close(struct nwif_conf_repo *repo);
 
 extern struct nwif_conf_repo *
 nwif_conf_alloc(void);

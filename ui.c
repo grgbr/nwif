@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "common.h"
 #include <utils/net.h>
+#include <netinet/ether.h>
 #include <linux/if.h>
 
 const char *

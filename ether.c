@@ -111,7 +111,7 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf,
 		return -ENODEV;
 
 	if (!kvs_autoidx_id_isok(conf->id)) {
-		err = kvs_autoidx_add(&repo->iface,
+		err = kvs_autoidx_add(&repo->ifaces.data,
 		                      xact,
 		                      &conf->id,
 		                      data,
@@ -119,7 +119,7 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf,
 		kvs_assert(err || kvs_autoidx_id_isok(conf->id));
 	}
 	else
-		err = kvs_autoidx_update(&repo->iface,
+		err = kvs_autoidx_update(&repo->ifaces.data,
 		                         xact,
 		                         conf->id,
 		                         data,

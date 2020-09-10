@@ -19,11 +19,6 @@
 
 #endif /* defined(CONFIG_NWIF_ASSERT) */
 
-struct nwif_conf_repo {
-	struct kvs_store iface;
-	struct kvs_depot depot;
-};
-
 enum nwif_attr_type {
 	NWIF_NAME_ATTR       = (1U << 0),
 	NWIF_OPER_STATE_ATTR = (1U << 1),
@@ -87,15 +82,16 @@ struct nwif_iface_conf {
 	struct nwif_iface_conf_data data[0];
 };
 
-#define nwif_iface_conf_assert(_conf) \
-	nwif_assert((_conf)->data[0].type >= 0); \
-	nwif_assert((_conf)->data[0].type < NWIF_TYPE_NR); \
-	nwif_assert(!nwif_iface_conf_has_attr(_conf, NWIF_NAME_ATTR) || \
-	            (unet_check_iface_name((_conf)->data[0].name) > 0)); \
-	nwif_assert(!nwif_iface_conf_has_attr(_conf, NWIF_OPER_STATE_ATTR) || \
-	            nwif_iface_oper_state_isok(conf->data[0].oper_state)); \
-	nwif_assert(!nwif_iface_conf_has_attr(_conf, NWIF_MTU_ATTR) || \
-	            unet_mtu_isok(conf->data[0].mtu))
+#define nwif_iface_conf_assert_data(_data) \
+	nwif_assert((_data)->type >= 0); \
+	nwif_assert((_data)->type < NWIF_TYPE_NR); \
+	nwif_assert(!nwif_iface_conf_data_has_attr(_data, NWIF_NAME_ATTR) || \
+	            (unet_check_iface_name((_data)->name) > 0)); \
+	nwif_assert(!nwif_iface_conf_data_has_attr(_data, \
+	                                           NWIF_OPER_STATE_ATTR) || \
+	            nwif_iface_oper_state_isok((_data)->oper_state)); \
+	nwif_assert(!nwif_iface_conf_data_has_attr(_data, NWIF_MTU_ATTR) || \
+	            unet_mtu_isok((_data)->mtu))
 
 static inline bool
 nwif_iface_conf_data_has_attr(const struct nwif_iface_conf_data *data,
@@ -139,13 +135,33 @@ nwif_iface_conf_init(struct nwif_iface_conf *conf, enum nwif_iface_type type)
 	conf->data[0].attr_mask = 0U;
 }
 
-extern int
-nwif_iface_conf_open(struct kvs_store       *store,
-                     const struct kvs_depot *depot,
-                     const struct kvs_xact  *xact);
+enum nwif_iface_conf_store_id {
+	NWIF_IFACE_CONF_NAMES_SID    = 0,
+#if 0
+	NWIF_IFACE_CONF_SYSPATHS_SID = 1,
+	NWIF_IFACE_CONF_HWADDRS_SID  = 2,
+#endif
+	NWIF_IFACE_CONF_SID_NR
+};
+
+struct nwif_iface_conf_table {
+	int               open_cnt;
+	struct kvs_store  data;
+	struct kvs_store  idx[NWIF_IFACE_CONF_SID_NR];
+};
 
 extern int
-nwif_iface_conf_close(const struct kvs_store *store);
+nwif_iface_conf_open_table(struct nwif_iface_conf_table *table,
+                           const struct kvs_depot       *depot,
+                           const struct kvs_xact        *xact);
+
+extern int
+nwif_iface_conf_close_table(struct nwif_iface_conf_table *table);
+
+struct nwif_conf_repo {
+	struct nwif_iface_conf_table ifaces;
+	struct kvs_depot             depot;
+};
 
 /******************************************************************************
  * Interface fabrics

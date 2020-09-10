@@ -10,7 +10,7 @@
 #include <linux/if.h>
 
 #define NWIF_SYSNETDEV_IFINDEX_PATTERN "net/*/ifindex"
-#define NWIF_IFACE_CONF_FNAME          "iface.db"
+#define NWIF_IFACE_CONF_BASENAME       "iface"
 
 bool
 nwif_iface_oper_state_isok(uint8_t oper_state)
@@ -89,11 +89,11 @@ free:
 #define nwif_iface_conf_assert_get(_conf) \
 	nwif_assert((_conf)->state != NWIF_IFACE_CONF_EMPTY_STATE); \
 	nwif_assert((_conf)->state != NWIF_IFACE_CONF_FAIL_STATE); \
-	nwif_iface_conf_assert(_conf)
+	nwif_iface_conf_assert_data((_conf)->data)
 
 #define nwif_iface_conf_assert_set(_conf) \
 	nwif_assert((_conf)->state != NWIF_IFACE_CONF_FAIL_STATE); \
-	nwif_iface_conf_assert(_conf)
+	nwif_iface_conf_assert_data((_conf)->data)
 
 struct kvs_autoidx_id
 nwif_iface_conf_get_id(const struct nwif_iface_conf *conf)
@@ -240,7 +240,7 @@ nwif_iface_conf_init_iter(const struct nwif_conf_repo *repo,
                           const struct kvs_xact       *xact,
                           struct kvs_iter             *iter)
 {
-	return kvs_autoidx_init_iter(&repo->iface, xact, iter);
+	return kvs_autoidx_init_iter(&repo->ifaces.data, xact, iter);
 }
 
 int
@@ -294,7 +294,7 @@ nwif_iface_conf_save(struct nwif_iface_conf *conf,
 	conf->state = !err ? NWIF_IFACE_CONF_CLEAN_STATE :
 	                     NWIF_IFACE_CONF_FAIL_STATE;
 
-	return 0;
+	return err;
 }
 
 static int
@@ -328,7 +328,7 @@ nwif_iface_conf_reload(struct nwif_iface_conf *conf,
 	struct kvs_autoidx_desc desc;
 	int                     ret;
 
-	ret = kvs_autoidx_get_desc(&repo->iface, xact, conf->id, &desc);
+	ret = kvs_autoidx_get_desc(&repo->ifaces.data, xact, conf->id, &desc);
 	if (ret)
 		return ret;
 
@@ -374,7 +374,7 @@ nwif_iface_conf_create_byid(struct kvs_autoidx_id        id,
 	struct kvs_autoidx_desc desc;
 	int                     err;
 
-	err = kvs_autoidx_get_desc(&repo->iface, xact, id, &desc);
+	err = kvs_autoidx_get_desc(&repo->ifaces.data, xact, id, &desc);
 	if (err) {
 		errno = -err;
 		return NULL;
@@ -389,20 +389,103 @@ nwif_iface_conf_destroy(struct nwif_iface_conf *conf)
 	free(conf);
 }
 
-int
-nwif_iface_conf_open(struct kvs_store       *store,
-                     const struct kvs_depot *depot,
-                     const struct kvs_xact  *xact)
+static ssize_t
+nwif_iface_conf_bind_name_idx(const void  *pkey_data,
+                              size_t       pkey_size,
+                              const void  *pitem_data,
+                              size_t       pitem_size,
+                              void       **skey_data)
 {
-	return kvs_autoidx_open(store,
-	                        depot,
-	                        xact,
-	                        NWIF_IFACE_CONF_FNAME,
-	                        S_IRUSR | S_IWUSR);
+	nwif_assert(pkey_data);
+	nwif_assert(pkey_size);
+	nwif_assert(pitem_data);
+	nwif_assert(pitem_size);
+	nwif_assert(skey_data);
+
+	struct nwif_iface_conf_data *data;
+
+	if (pitem_size <= sizeof(*data))
+		return -EMSGSIZE;
+
+	data = (struct nwif_iface_conf_data *)pitem_data;
+	nwif_iface_conf_assert_data(data);
+
+	if (!nwif_iface_conf_data_has_attr(data, NWIF_NAME_ATTR))
+		return 0;
+
+	*skey_data = data->name;
+
+	return strlen(data->name);
 }
 
 int
-nwif_iface_conf_close(const struct kvs_store *store)
+nwif_iface_conf_open_table(struct nwif_iface_conf_table *table,
+                           const struct kvs_depot       *depot,
+                           const struct kvs_xact        *xact)
 {
-	return kvs_autoidx_close(store);
+	int err;
+
+	table->open_cnt = 0;
+	err = kvs_autoidx_open(&table->data,
+	                       depot,
+	                       xact,
+	                       NWIF_IFACE_CONF_BASENAME ".db",
+	                       S_IRUSR | S_IWUSR);
+	if (err)
+		return err;
+
+	err = kvs_open_index(&table->idx[table->open_cnt++],
+	                     &table->data,
+	                     depot,
+	                     xact,
+	                     NWIF_IFACE_CONF_BASENAME ".idx",
+	                     "names",
+	                     S_IRUSR | S_IWUSR,
+	                     &nwif_iface_conf_bind_name_idx);
+	if (err)
+		return err;
+
+#if 0
+	err = kvs_open_index(&table->syspaths,
+	                     &table->data,
+	                     depot,
+	                     &xact,
+	                     NWIF_IFACE_CONF_BASENAME ".idx",
+	                     "syspaths",
+	                     S_IRUSR | S_IWUSR,
+	                     &nwif_iface_conf_bind_sypath_idx);
+	if (err)
+		return err;
+
+	err = kvs_open_index(&table->hwaddrs,
+	                     &table->data,
+	                     depot,
+	                     &xact,
+	                     NWIF_IFACE_CONF_BASENAME ".idx",
+	                     "hwaddrs",
+	                     S_IRUSR | S_IWUSR,
+	                     &nwif_iface_conf_bind_hwaddr_idx);
+	if (err)
+		return err;
+#endif
+
+	return 0;
+}
+
+int
+nwif_iface_conf_close_table(struct nwif_iface_conf_table *table)
+{
+	int ret = 0;
+
+	while (!ret && table->open_cnt)
+		ret = kvs_close_index(&table->idx[--table->open_cnt]);
+	while (table->open_cnt)
+		kvs_close_index(&table->idx[--table->open_cnt]);
+
+	if (!ret)
+		ret = kvs_autoidx_close(&table->data);
+	else
+		kvs_autoidx_close(&table->data);
+
+	return ret;
 }

@@ -358,6 +358,8 @@ nwif_conf_clui_exec_new_iface(const struct nwif_conf_clui_ctx *ctx,
 	nwif_conf_clui_new_iface(&sess, ctx->iface_conf);
 
 	ret = nwif_conf_close_clui_session(&sess);
+	if (ret)
+		nwif_conf_clui_err(parser, ret, "failed to create interface");
 
 destroy:
 	nwif_iface_conf_destroy(ctx->iface_conf);

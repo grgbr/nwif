@@ -58,18 +58,21 @@ nwif_conf_open(struct nwif_conf_repo *repo,
 	if (err)
 		goto close_depot;
 
-	err = nwif_iface_conf_open(&repo->iface, &repo->depot, &xact);
+	err = nwif_iface_conf_open_table(&repo->ifaces, &repo->depot, &xact);
 	if (err)
 		goto rollback;
 
 	err = kvs_commit_xact(&xact);
 	if (err)
-		goto close_depot;
+		goto close_table;
 	
 	return 0;
 
 rollback:
 	kvs_rollback_xact(&xact);
+
+close_table:
+	nwif_iface_conf_close_table(&repo->ifaces);
 
 close_depot:
 	kvs_close_depot(&repo->depot);
@@ -78,14 +81,13 @@ close_depot:
 }
 
 int
-nwif_conf_close(const struct nwif_conf_repo *repo)
+nwif_conf_close(struct nwif_conf_repo *repo)
 {
 	nwif_assert(repo);
 
 	int ret;
 
-	ret = nwif_iface_conf_close(&repo->iface);
-
+	ret = nwif_iface_conf_close_table(&repo->ifaces);
 	if (!ret)
 		ret = kvs_close_depot(&repo->depot);
 	else
