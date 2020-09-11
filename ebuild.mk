@@ -37,7 +37,7 @@ bins               := nwif_conf
 nwif_conf-objs     := nwif_conf.o ui.o
 nwif_conf-cflags   := $(EXTRA_CFLAGS) $(common-cflags)
 nwif_conf-ldflags  := $(EXTRA_LDFLAGS) -lnwif
-nwif_conf-pkgconf   = libclui libutils smartcols \
+nwif_conf-pkgconf   = libkvstore libclui libutils smartcols \
                       $(call kconf_enabled,NWIF_BTRACE,libbtrace)
 
 #bins          := nwifd

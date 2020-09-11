@@ -3,11 +3,21 @@
 
 #include <nwif/nwif.h>
 #include <sys/types.h>
+#include <kvstore/autorec.h>
 
 struct ether_addr;
 
 extern const char *
 nwif_ui_get_iface_type_label(enum nwif_iface_type type);
+
+#define NWIF_CONF_ID_STRING_MAX (14U)
+
+extern int
+nwif_ui_parse_conf_id(const char *arg, struct kvs_autorec_id *id);
+
+extern void
+nwif_ui_sprintf_conf_id(char                  string[NWIF_CONF_ID_STRING_MAX],
+                        struct kvs_autorec_id id);
 
 extern ssize_t
 nwif_ui_parse_iface_name(const char *arg);

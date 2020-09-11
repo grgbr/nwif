@@ -45,6 +45,11 @@ nwif_iface_conf_reload(struct nwif_iface_conf *conf,
                        const struct kvs_xact  *xact,
                        struct nwif_conf_repo  *repo);
 
+extern int
+nwif_iface_conf_del_byid(struct kvs_autorec_id        id,
+                         const struct kvs_xact       *xact,
+                         const struct nwif_conf_repo *repo);
+
 extern struct nwif_iface_conf *
 nwif_iface_conf_create_from_desc(const struct kvs_autorec_desc *desc);
 

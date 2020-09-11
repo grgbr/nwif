@@ -46,6 +46,7 @@ struct nwif_conf_clui_ctx {
 	const char                     *path;
 	union {
 		const struct clui_cmd  *cmd;
+		struct kvs_autorec_id   iface_id;
 		const char             *iface_name;
 		struct nwif_iface_conf *iface_conf;
 	};
@@ -191,6 +192,12 @@ free:
 /******************************************************************************
  * Base interface handling
  ******************************************************************************/
+
+#define NWIF_CONF_CLUI_IFACE_ID_WHERE \
+	"    <IFACE_ID>   -- interface identifier.\n"
+
+#define NWIF_CONF_CLUI_IFACE_NAME_WHERE \
+	"    <IFACE_NAME> -- interface name.\n"
 
 enum nwif_conf_clui_iface_col_id {
 	NWIF_CONF_CLUI_IFACE_ID_CID,
@@ -715,7 +722,7 @@ static const struct clui_cmd nwif_conf_clui_iface_new_cmd = {
 	"    This help message.\n" \
 	"\n" \
 	"Where:\n" \
-	"    <IFACE_NAME> -- interface name.\n"
+	NWIF_CONF_CLUI_IFACE_NAME_WHERE
 
 struct nwif_conf_clui_iface_col_desc {
 	const char *label;
@@ -798,8 +805,7 @@ nwif_conf_clui_render_iface(struct libscols_table        *table,
                             const struct nwif_iface_conf *iface)
 {
 	struct libscols_line         *line;
-	struct kvs_autorec_id         id;
-	char                         *str;
+	char                          str[NWIF_CONF_ID_STRING_MAX];
 	int                           err;
 	enum nwif_iface_type          type;
 	const char                   *name;
@@ -810,17 +816,9 @@ nwif_conf_clui_render_iface(struct libscols_table        *table,
 	if (!line)
 		return -errno;
 
-	/*
-	 * Render interface config id.
-	 * TODO: find a way to print id in a portable manner ?!
-	 */
-	id = nwif_iface_conf_get_id(iface);
-	if (asprintf(&str,
-	             "%" PRIx32 ".%04" PRIx16,
-	             id.rid.pgno,
-	             id.rid.indx) < 0)
-		return -errno;
-	err = scols_line_refer_data(line, NWIF_CONF_CLUI_IFACE_ID_CID, str);
+	/* Render interface config id. */
+	nwif_ui_sprintf_conf_id(str, nwif_iface_conf_get_id(iface));
+	err = scols_line_set_data(line, NWIF_CONF_CLUI_IFACE_ID_CID, str);
 	nwif_conf_clui_assert(!err);
 
 	/* Render interface type. */
@@ -852,11 +850,10 @@ nwif_conf_clui_render_iface(struct libscols_table        *table,
 	/* Render optional MTU. */
 	err = nwif_iface_conf_get_mtu(iface, &mtu);
 	if (!err) {
-		if (asprintf(&str, "%" PRIu16, mtu) < 0)
-			return -errno;
-		err = scols_line_refer_data(line,
-		                            NWIF_CONF_CLUI_IFACE_MTU_CID,
-		                            str);
+		sprintf(str, "%" PRIu16, mtu);
+		err = scols_line_set_data(line,
+		                          NWIF_CONF_CLUI_IFACE_MTU_CID,
+		                          str);
 		nwif_conf_clui_assert(!err);
 	}
 
@@ -1020,7 +1017,7 @@ nwif_conf_clui_parse_iface_show(const struct clui_cmd *cmd,
 		}
 
 		if (unet_check_iface_name(arg) < 0) {
-			clui_err(parser, "invalid interface name '%s'.", arg);
+			clui_err(parser, "invalid interface name '%s'.\n", arg);
 			return -EINVAL;
 		}
 
@@ -1056,6 +1053,124 @@ static const struct clui_cmd nwif_conf_clui_iface_show_cmd = {
 };
 
 /******************************************************************************
+ * iface del command handling
+ ******************************************************************************/
+
+#define NWIF_CONF_CLUI_IFACE_DEL_HELP \
+	"Synopsis:\n" \
+	"    %1$s iface del <IFACE_ID>\n" \
+	"    Delete interface specified by <IFACE_ID>.\n" \
+	"\n" \
+	"    %1$s iface del <IFACE_NAME>\n" \
+	"    Delete interface specified by <IFACE_NAME>.\n" \
+	"\n" \
+	"    %1$s iface del help\n" \
+	"    This help message.\n" \
+	"\n" \
+	"Where:\n" \
+	NWIF_CONF_CLUI_IFACE_ID_WHERE \
+	NWIF_CONF_CLUI_IFACE_NAME_WHERE \
+
+static int
+nwif_conf_clui_exec_del_iface_byid(const struct nwif_conf_clui_ctx *ctx,
+                                   const struct clui_parser        *parser)
+{
+	nwif_conf_clui_assert(ctx);
+
+	struct nwif_conf_clui_session sess;
+	int                           err;
+
+	err = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	if (err)
+		return err;
+
+	err = nwif_iface_conf_del_byid(ctx->iface_id,
+	                               &sess.xact,
+	                               sess.repo);
+	if (err) {
+		char str[NWIF_CONF_ID_STRING_MAX];
+
+		nwif_ui_sprintf_conf_id(str, ctx->iface_id);
+		nwif_conf_clui_err(parser,
+		                   err,
+		                   "failed to delete interface identified by "
+		                   "'%s'",
+		                   str);
+
+	}
+
+	sess.err = err;
+
+	return nwif_conf_close_clui_session(&sess);
+}
+
+static int
+nwif_conf_clui_exec_del_iface_byname(const struct nwif_conf_clui_ctx *ctx,
+                                     const struct clui_parser        *parser)
+{
+#warning IMPLEMENT ME!!
+
+	return -ENOSYS;
+}
+
+static int
+nwif_conf_clui_parse_del_iface(const struct clui_cmd *cmd,
+                               struct clui_parser    *parser,
+                               int                    argc,
+                               char * const           argv[],
+                               void                  *ctx)
+{
+	nwif_conf_clui_assert(ctx);
+
+	struct nwif_conf_clui_ctx *nctx = (struct nwif_conf_clui_ctx *)ctx;
+	const char                *arg = argv[0];
+	int                        ret;
+
+	if (argc != 1) {
+		clui_err(parser, "invalid number of arguments.\n");
+		clui_help_cmd(cmd, parser, stderr);
+		return -EINVAL;
+	}
+
+	if (!strcmp(arg, "help")) {
+		nwif_conf_clui_sched_help(ctx, cmd);
+		return 0;
+	}
+
+	ret = nwif_ui_parse_conf_id(arg, &nctx->iface_id);
+	if (!ret) {
+		nwif_conf_clui_sched_exec(ctx,
+		                          nwif_conf_clui_exec_del_iface_byid);
+		return 0;
+	}
+
+	ret = nwif_ui_parse_iface_name(arg);
+	if (ret > 0) {
+		nctx->iface_name = arg;
+		nwif_conf_clui_sched_exec(ctx,
+	                                  nwif_conf_clui_exec_del_iface_byname);
+		return 0;
+	}
+
+	clui_err(parser, "invalid interface name or id '%s'.\n", arg);
+
+	return -EINVAL;
+}
+
+static void
+nwif_conf_clui_iface_del_help(const struct clui_cmd    *cmd __unused,
+                              const struct clui_parser *parser,
+                              FILE                     *stdio)
+{
+	fprintf(stdio, NWIF_CONF_CLUI_IFACE_DEL_HELP, parser->argv0);
+}
+
+static const struct clui_cmd nwif_conf_clui_iface_del_cmd = {
+	.parse = nwif_conf_clui_parse_del_iface,
+	.help  = nwif_conf_clui_iface_del_help
+};
+
+/******************************************************************************
  * iface command handling
  ******************************************************************************/
 
@@ -1067,12 +1182,16 @@ static const struct clui_cmd nwif_conf_clui_iface_show_cmd = {
 	"    %1$s iface new <IFACE_NEW_SPEC> | help\n" \
 	"    Create new interface according to <IFACE_NEW_SPEC>.\n" \
 	"\n" \
+	"    %1$s iface del <IFACE_DEL_SPEC> | help\n" \
+	"    Delete interface according to <IFACE_DEL_SPEC>.\n" \
+	"\n" \
 	"    %1$s iface help\n" \
 	"    This help message.\n" \
 	"\n" \
 	"Where:\n" \
 	"    [IFACE_SHOW_SPEC] -- optional show interface specification.\n" \
-	"    <IFACE_NEW_SPEC>  -- mandatory new interface specification.\n"
+	"    <IFACE_NEW_SPEC>  -- mandatory new interface specification.\n" \
+	"    <IFACE_DEL_SPEC>  -- mandatory interface deletion specification.\n"
 
 static int
 nwif_conf_clui_parse_iface(const struct clui_cmd *cmd,
@@ -1117,6 +1236,7 @@ nwif_conf_clui_parse_iface(const struct clui_cmd *cmd,
 		                      &argv[1],
 		                      ctx);
 	}
+#endif
 	else if (!strcmp(argv[0], "del")) {
 		return clui_parse_cmd(&nwif_conf_clui_iface_del_cmd,
 		                      parser,
@@ -1124,7 +1244,6 @@ nwif_conf_clui_parse_iface(const struct clui_cmd *cmd,
 		                      &argv[1],
 		                      ctx);
 	}
-#endif
 	else if (!strcmp(argv[0], "help")) {
 		nwif_conf_clui_sched_help(ctx, cmd);
 		return 0;

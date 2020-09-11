@@ -1,8 +1,9 @@
 #include "ui.h"
 #include "common.h"
-#include <utils/net.h>
+#include <stdio.h>
 #include <netinet/ether.h>
 #include <linux/if.h>
+#include <utils/net.h>
 
 const char *
 nwif_ui_get_iface_type_label(enum nwif_iface_type type)
@@ -13,6 +14,55 @@ nwif_ui_get_iface_type_label(enum nwif_iface_type type)
 	default:
 		return "unknown";
 	}
+}
+
+/*
+ * Parse a kvs_autorec_id according to the following format: 'XXXXXXXX.xxxx'
+ *
+ * Where X and x are hexadecimal digits. There can be up to a maximum of 8 X
+ * and 4 x digits (separated by a single dot).
+ */
+int
+nwif_ui_parse_conf_id(const char *arg, struct kvs_autorec_id *id)
+{
+	int     err;
+	char    str[NWIF_CONF_ID_STRING_MAX];
+	ssize_t len;
+
+	len = ustr_parse(arg, sizeof(str));
+	if (!len)
+		return -ENODATA;
+	if (len < 0)
+		return len;
+
+	memcpy(str, arg, len);
+	str[len] = '\0';
+
+	len = ustr_skip_notchar(str, '.', len);
+	if (!len || ((size_t)len >= (sizeof(str) - 2)))
+		return -EBADMSG;
+
+	str[len] = '\0';
+
+	err = ustr_parse_x32(str, &id->rid.pgno);
+	if (err)
+		return err;
+
+	err = ustr_parse_x16(&str[len + 1], &id->rid.indx);
+	if (err)
+		return err;
+
+	if (!kvs_autorec_id_isok(*id))
+		return -EPERM;
+
+	return 0;
+}
+
+void
+nwif_ui_sprintf_conf_id(char                  string[NWIF_CONF_ID_STRING_MAX],
+                        struct kvs_autorec_id id)
+{
+	sprintf(string, "%" PRIx32 ".%04" PRIx16, id.rid.pgno, id.rid.indx);
 }
 
 ssize_t
