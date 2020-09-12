@@ -4,25 +4,11 @@
 #include <utils/net.h>
 #include <utils/path.h>
 #include <clui/clui.h>
-#include <libsmartcols/libsmartcols.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
 #define NWIF_CONF_DIR_PATH CONFIG_NWIF_LOCALSTATEDIR
-
-#if defined(CONFIG_NWIF_ASSERT)
-
-#include <utils/assert.h>
-
-#define nwif_conf_clui_assert(_expr) \
-	uassert("nwif_conf", _expr)
-
-#else  /* !defined(CONFIG_NWIF_ASSERT) */
-
-#define nwif_conf_clui_assert(_expr)
-
-#endif /* defined(CONFIG_NWIF_ASSERT) */
 
 #define nwif_conf_clui_err(_parser, _error, _format, ...) \
 	clui_err(_parser, \
@@ -55,9 +41,9 @@ struct nwif_conf_clui_ctx {
 static void
 nwif_conf_clui_sched_exec(void *ctx, nwif_conf_clui_exec_fn *exec)
 {
-	nwif_conf_clui_assert(ctx);
-	nwif_conf_clui_assert(exec);
-	nwif_conf_clui_assert(!((struct nwif_conf_clui_ctx *)ctx)->exec);
+	nwif_ui_assert(ctx);
+	nwif_ui_assert(exec);
+	nwif_ui_assert(!((struct nwif_conf_clui_ctx *)ctx)->exec);
 
 	((struct nwif_conf_clui_ctx *)ctx)->exec = exec;
 }
@@ -66,7 +52,7 @@ static int
 nwif_conf_clui_exec_help(const struct nwif_conf_clui_ctx *ctx,
                          const struct clui_parser        *parser)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	clui_help_cmd(ctx->cmd, parser, stdout);
 
@@ -76,7 +62,7 @@ nwif_conf_clui_exec_help(const struct nwif_conf_clui_ctx *ctx,
 static void
 nwif_conf_clui_sched_help(void *ctx, const struct clui_cmd *cmd)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	((struct nwif_conf_clui_ctx *)ctx)->cmd = cmd;
 
@@ -94,19 +80,19 @@ struct nwif_conf_clui_session {
 	const struct clui_parser *parser;
 };
 
-#define nwif_conf_clui_assert_session(_sess) \
-	nwif_conf_clui_assert(_sess); \
-	nwif_conf_clui_assert((_sess)->repo); \
-	nwif_conf_clui_assert((_sess)->parser)
+#define nwif_ui_assert_session(_sess) \
+	nwif_ui_assert(_sess); \
+	nwif_ui_assert((_sess)->repo); \
+	nwif_ui_assert((_sess)->parser)
 
 static int
 nwif_conf_begin_clui_session(struct nwif_conf_clui_session *session,
                              const char                    *path,
                              const struct clui_parser      *parser)
 {
-	nwif_conf_clui_assert(session);
-	nwif_conf_clui_assert(upath_validate_path_name(path) > 0);
-	nwif_conf_clui_assert(parser);
+	nwif_ui_assert(session);
+	nwif_ui_assert(upath_validate_path_name(path) > 0);
+	nwif_ui_assert(parser);
 	int err;
 
 	session->repo = nwif_conf_alloc();
@@ -148,7 +134,7 @@ free:
 static int
 nwif_conf_close_clui_session(const struct nwif_conf_clui_session *session)
 {
-	nwif_conf_clui_assert_session(session);
+	nwif_ui_assert_session(session);
 
 	int err = session->err;
 
@@ -216,16 +202,16 @@ nwif_conf_clui_parse_iface_name(const struct clui_cmd *cmd,
                                 const char            *arg,
                                 void                  *ctx)
 {
-	nwif_conf_clui_assert(cmd);
-	nwif_conf_clui_assert(parser);
-	nwif_conf_clui_assert(arg);
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(cmd);
+	nwif_ui_assert(parser);
+	nwif_ui_assert(arg);
+	nwif_ui_assert(ctx);
 
 	ssize_t                 len;
 	struct nwif_iface_conf *conf = ((struct nwif_conf_clui_ctx *)
 	                                ctx)->iface_conf;
 
-	nwif_conf_clui_assert(conf);
+	nwif_ui_assert(conf);
 
 	len = nwif_ui_parse_iface_name(arg);
 	if (len < 0) {
@@ -253,10 +239,10 @@ nwif_conf_clui_parse_iface_oper_state(const struct clui_cmd *cmd,
                                       const char            *arg,
                                       void                  *ctx)
 {
-	nwif_conf_clui_assert(cmd);
-	nwif_conf_clui_assert(parser);
-	nwif_conf_clui_assert(arg);
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(cmd);
+	nwif_ui_assert(parser);
+	nwif_ui_assert(arg);
+	nwif_ui_assert(ctx);
 
 	int                     err;
 	uint8_t                 oper;
@@ -264,7 +250,7 @@ nwif_conf_clui_parse_iface_oper_state(const struct clui_cmd *cmd,
 	struct nwif_iface_conf *conf = ((struct nwif_conf_clui_ctx *)
 	                                ctx)->iface_conf;
 
-	nwif_conf_clui_assert(conf);
+	nwif_ui_assert(conf);
 
 	err = nwif_ui_parse_oper_state(arg, &oper);
 	switch (err) {
@@ -305,17 +291,17 @@ nwif_conf_clui_parse_iface_mtu(const struct clui_cmd *cmd,
                                const char            *arg,
                                void                  *ctx)
 {
-	nwif_conf_clui_assert(cmd);
-	nwif_conf_clui_assert(parser);
-	nwif_conf_clui_assert(arg);
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(cmd);
+	nwif_ui_assert(parser);
+	nwif_ui_assert(arg);
+	nwif_ui_assert(ctx);
 
 	int                     err;
 	uint32_t                mtu;
 	struct nwif_iface_conf *conf = ((struct nwif_conf_clui_ctx *)
 	                                ctx)->iface_conf;
 
-	nwif_conf_clui_assert(conf);
+	nwif_ui_assert(conf);
 
 	err = nwif_ui_parse_mtu(arg, &mtu);
 	if (!err) {
@@ -340,7 +326,7 @@ static int
 nwif_conf_clui_new_iface(struct nwif_conf_clui_session *session,
                          struct nwif_iface_conf        *conf)
 {
-	nwif_conf_clui_assert_session(session);
+	nwif_ui_assert_session(session);
 
 	session->err = nwif_iface_conf_save(conf,
 	                                    &session->xact,
@@ -353,7 +339,7 @@ static int
 nwif_conf_clui_exec_new_iface(const struct nwif_conf_clui_ctx *ctx,
                               const struct clui_parser        *parser)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	struct nwif_conf_clui_session sess;
 	int                           ret;
@@ -381,7 +367,6 @@ destroy:
 #if defined(CONFIG_NWIF_ETHER)
 
 #include <nwif/ether.h>
-#include <netinet/ether.h>
 
 #define NWIF_CONF_CLUI_IFACE_NEW_ETHER_SYNOPSIS \
 	"    %1$s iface new ether <ETHER_NEW_SPEC> | help\n" \
@@ -420,9 +405,9 @@ nwif_conf_clui_parse_ether_syspath(const struct clui_parser *parser,
                                    const char               *arg,
                                    struct nwif_iface_conf   *conf)
 {
-	nwif_conf_clui_assert(parser);
-	nwif_conf_clui_assert(arg);
-	nwif_conf_clui_assert(conf);
+	nwif_ui_assert(parser);
+	nwif_ui_assert(arg);
+	nwif_ui_assert(conf);
 
 	char       *syspath;
 	ssize_t     ret;
@@ -470,10 +455,10 @@ nwif_conf_clui_parse_ether_hwaddr(const struct clui_cmd *cmd,
                                   const char            *arg,
                                   void                  *ctx)
 {
-	nwif_conf_clui_assert(cmd);
-	nwif_conf_clui_assert(parser);
-	nwif_conf_clui_assert(arg);
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(cmd);
+	nwif_ui_assert(parser);
+	nwif_ui_assert(arg);
+	nwif_ui_assert(ctx);
 
 	int                     err;
 	struct ether_addr       addr;
@@ -481,7 +466,7 @@ nwif_conf_clui_parse_ether_hwaddr(const struct clui_cmd *cmd,
 	struct nwif_iface_conf *conf = ((struct nwif_conf_clui_ctx *)
 	                                ctx)->iface_conf;
 
-	nwif_conf_clui_assert(conf);
+	nwif_ui_assert(conf);
 
 	err = nwif_ui_parse_hwaddr(arg, &addr);
 	switch (err) {
@@ -528,7 +513,7 @@ nwif_conf_clui_parse_new_ether(const struct clui_cmd *cmd,
                                char * const           argv[],
                                void                  *ctx)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	struct nwif_ether_conf    *conf;
 	struct nwif_conf_clui_ctx *nctx;
@@ -604,40 +589,6 @@ static const struct clui_cmd nwif_conf_clui_new_ether_cmd = {
 	.help  = nwif_conf_clui_new_ether_help
 };
 
-static int
-nwif_conf_clui_render_ether(struct libscols_line         *line,
-                            const struct nwif_iface_conf *iface)
-{
-	const struct nwif_ether_conf *conf = nwif_ether_conf_from_iface(iface);
-	int                           err;
-	const struct ether_addr      *hwaddr;
-
-	/* Render sysfs device path. */
-	err = scols_line_set_data(line,
-	                          NWIF_CONF_CLUI_IFACE_SYSPATH_CID,
-	                          nwif_ether_conf_get_syspath(conf));
-	if (err)
-		return err;
-
-	/* Render optional hardware address. */
-	hwaddr = nwif_ether_conf_get_hwaddr(conf);
-	if (hwaddr) {
-		char *str;
-
-		str = malloc(UNET_HWADDR_STRING_MAX);
-		if (!str)
-			return -errno;
-
-		ether_ntoa_r(hwaddr, str);
-		err = scols_line_refer_data(line,
-		                            NWIF_CONF_CLUI_IFACE_HWADDR_CID,
-		                            str);
-		nwif_conf_clui_assert(!err);
-	}
-
-	return 0;
-}
-
 #else /* !defined(CONFIG_NWIF_ETHER) */
 
 #define NWIF_CONF_CLUI_IFACE_NEW_ETHER_SYNOPSIS
@@ -665,7 +616,7 @@ nwif_conf_clui_parse_new_iface(const struct clui_cmd *cmd,
                                char * const           argv[],
                                void                  *ctx)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	if (argc < 1) {
 		clui_err(parser, "invalid number of arguments.\n");
@@ -724,155 +675,10 @@ static const struct clui_cmd nwif_conf_clui_iface_new_cmd = {
 	"Where:\n" \
 	NWIF_CONF_CLUI_IFACE_NAME_WHERE
 
-struct nwif_conf_clui_iface_col_desc {
-	const char *label;
-	double      whint;
-	int         flags;
-};
-
-static const struct nwif_conf_clui_iface_col_desc 
-nwif_conf_clui_iface_cols[NWIF_CONF_CLUI_IFACE_CID_NR] = {
-	[NWIF_CONF_CLUI_IFACE_ID_CID] = {
-		.label = "ID",
-		.whint = 1.0,
-		.flags = SCOLS_FL_RIGHT
-	},
-	[NWIF_CONF_CLUI_IFACE_TYPE_CID] = {
-		.label = "TYPE",
-		.whint = 1.0,
-		.flags = 0
-	},
-	[NWIF_CONF_CLUI_IFACE_NAME_CID] = {
-		.label = "NAME",
-		.whint = 1.0,
-		.flags = 0
-	},
-	[NWIF_CONF_CLUI_IFACE_OPER_STATE_CID] = {
-		.label = "OPER",
-		.whint = 1.0,
-		.flags = 0
-	},
-	[NWIF_CONF_CLUI_IFACE_MTU_CID] = {
-		.label = "MTU",
-		.whint = 1.0,
-		.flags = 0
-	},
-	[NWIF_CONF_CLUI_IFACE_SYSPATH_CID] = {
-		.label = "SYSPATH",
-		.whint = 1.0,
-		.flags = SCOLS_FL_WRAP
-	},
-	[NWIF_CONF_CLUI_IFACE_HWADDR_CID] = {
-		.label = "HWADDR",
-		.whint = 1.0,
-		.flags = 0
-	}
-};
-
-static struct libscols_table *
-nwif_conf_clui_new_iface_table(void)
-{
-	struct libscols_table *tbl;
-	unsigned int           c;
-
-	tbl = scols_new_table();
-	if (!tbl)
-		return NULL;
-
-	scols_table_enable_header_repeat(tbl, 1);
-
-	for (c = 0; c < array_nr(nwif_conf_clui_iface_cols); c++) {
-		const struct nwif_conf_clui_iface_col_desc *col;
-
-		col = &nwif_conf_clui_iface_cols[c];
-		if (!scols_table_new_column(tbl,
-		                            col->label,
-		                            col->whint,
-		                            col->flags))
-			goto unref;
-	}
-
-	return tbl;
-
-unref:
-	scols_unref_table(tbl);
-
-	return NULL;
-}
-
-static int
-nwif_conf_clui_render_iface(struct libscols_table        *table,
-                            const struct nwif_iface_conf *iface)
-{
-	struct libscols_line         *line;
-	char                          str[NWIF_CONF_ID_STRING_MAX];
-	int                           err;
-	enum nwif_iface_type          type;
-	const char                   *name;
-	uint8_t                       oper;
-	uint32_t                      mtu;
-
-	line = scols_table_new_line(table, NULL);
-	if (!line)
-		return -errno;
-
-	/* Render interface config id. */
-	nwif_ui_sprintf_conf_id(str, nwif_iface_conf_get_id(iface));
-	err = scols_line_set_data(line, NWIF_CONF_CLUI_IFACE_ID_CID, str);
-	nwif_conf_clui_assert(!err);
-
-	/* Render interface type. */
-	type = nwif_iface_conf_get_type(iface);
-	err = scols_line_set_data(line,
-	                          NWIF_CONF_CLUI_IFACE_TYPE_CID,
-	                          nwif_ui_get_iface_type_label(type));
-	if (err)
-		return err;
-
-	/* Render optional interface name */
-	name = nwif_iface_conf_get_name(iface);
-	if (name) {
-		err = scols_line_set_data(line,
-		                          NWIF_CONF_CLUI_IFACE_NAME_CID,
-		                          name);
-		if (err)
-			return err;
-	}
-
-	/* Render optional operational state. */
-	nwif_iface_conf_get_oper_state(iface, &oper);
-	err = scols_line_set_data(line,
-	                          NWIF_CONF_CLUI_IFACE_OPER_STATE_CID,
-	                          nwif_ui_get_oper_state_label(oper));
-	if (err)
-		return err;
-
-	/* Render optional MTU. */
-	err = nwif_iface_conf_get_mtu(iface, &mtu);
-	if (!err) {
-		sprintf(str, "%" PRIu16, mtu);
-		err = scols_line_set_data(line,
-		                          NWIF_CONF_CLUI_IFACE_MTU_CID,
-		                          str);
-		nwif_conf_clui_assert(!err);
-	}
-
-	/* Now render interface type specific infos. */
-	switch (type) {
-#if defined(CONFIG_NWIF_ETHER)
-	case NWIF_ETHER_IFACE_TYPE:
-		return nwif_conf_clui_render_ether(line, iface);
-#endif /* defined(CONFIG_NWIF_ETHER) */
-
-	default:
-		nwif_conf_clui_assert(0);
-	}
-}
-
 static int
 nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 {
-	nwif_conf_clui_assert_session(session);
+	nwif_ui_assert_session(session);
 
 	struct libscols_table   *tbl;
 	struct kvs_iter          iter;
@@ -888,12 +694,12 @@ nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 		goto err;
 	}
 
-	tbl = nwif_conf_clui_new_iface_table();
+	tbl = nwif_ui_create_iface_conf_table();
 	if (!tbl) {
 		nwif_conf_clui_err(
 			session->parser,
 			err,
-			"failed to allocate interfaces configuration table");
+			"failed to create interfaces configuration table");
 		goto fini;
 	}
 
@@ -908,7 +714,7 @@ nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 			break;
 		}
 
-		err = nwif_conf_clui_render_iface(tbl, iface);
+		err = nwif_ui_render_iface_conf_table(tbl, iface);
 
 		nwif_iface_conf_destroy(iface);
 	}
@@ -918,12 +724,12 @@ nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 			session->parser,
 			err,
 			"failed to browse interfaces configuration");
-		goto unref;
+		goto destroy;
 	}
 
-	scols_print_table(tbl);
+	nwif_ui_display_iface_conf_table(tbl);
 
-	scols_unref_table(tbl);
+	nwif_ui_destroy_iface_conf_table(tbl);
 
 	err = nwif_iface_conf_fini_iter(&iter);
 	if (err) {
@@ -936,8 +742,8 @@ nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 
 	return 0;
 
-unref:
-	scols_unref_table(tbl);
+destroy:
+	nwif_ui_destroy_iface_conf_table(tbl);
 
 fini:
 	nwif_iface_conf_fini_iter(&iter);
@@ -949,19 +755,10 @@ err:
 }
 
 static int
-nwif_conf_clui_show_one_iface(struct nwif_conf_clui_session *session,
-                              const char                    *name)
-{
-#warning IMPLEMENT ME!!
-
-	return -ENOSYS;
-}
-
-static int
 nwif_conf_clui_exec_show_all_ifaces(const struct nwif_conf_clui_ctx *ctx,
                                     const struct clui_parser        *parser)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	struct nwif_conf_clui_session sess;
 	int                           err;
@@ -976,10 +773,71 @@ nwif_conf_clui_exec_show_all_ifaces(const struct nwif_conf_clui_ctx *ctx,
 }
 
 static int
-nwif_conf_clui_exec_show_one_iface(const struct nwif_conf_clui_ctx *ctx,
-                                   const struct clui_parser        *parser)
+nwif_conf_clui_show_iface(struct nwif_conf_clui_session *session,
+                          const struct nwif_iface_conf  *iface)
 {
-	nwif_conf_clui_assert(ctx);
+	struct libscols_table *tbl;
+	int                    ret;
+
+	tbl = nwif_ui_create_iface_conf_table();
+	if (!tbl) {
+		ret = -errno;
+		nwif_conf_clui_err(
+			session->parser,
+			ret,
+			"failed to create interface configuration table");
+		return ret;
+	}
+
+	ret = nwif_ui_render_iface_conf_table(tbl, iface);
+	if (ret)
+		nwif_conf_clui_err(
+			session->parser,
+			ret,
+			"failed to render '%s' interface configuration",
+			nwif_iface_conf_get_name(iface));
+	else
+		nwif_ui_display_iface_conf_table(tbl);
+
+	nwif_ui_destroy_iface_conf_table(tbl);
+
+	return ret;
+}
+
+static int
+nwif_conf_clui_show_iface_byname(struct nwif_conf_clui_session *session,
+                                 const char                    *name)
+{
+	nwif_ui_assert(unet_check_iface_name(name) > 0);
+
+	struct nwif_iface_conf *iface;
+	int                     ret;
+
+	iface = nwif_iface_conf_create_byname(name,
+	                                      strlen(name),
+	                                      &session->xact,
+	                                      session->repo);
+	if (!iface) {
+		nwif_conf_clui_err(
+			session->parser,
+			-errno,
+			"failed to load '%s' interface configuration",
+			name);
+		return -errno;
+	}
+
+	ret = nwif_conf_clui_show_iface(session, iface);
+
+	nwif_iface_conf_destroy(iface);
+
+	return ret;
+}
+
+static int
+nwif_conf_clui_exec_show_iface_byname(const struct nwif_conf_clui_ctx *ctx,
+                                      const struct clui_parser        *parser)
+{
+	nwif_ui_assert(ctx);
 
 	struct nwif_conf_clui_session sess;
 	int                           err;
@@ -988,7 +846,52 @@ nwif_conf_clui_exec_show_one_iface(const struct nwif_conf_clui_ctx *ctx,
 	if (err)
 		return err;
 
-	nwif_conf_clui_show_one_iface(&sess, ctx->iface_name);
+	nwif_conf_clui_show_iface_byname(&sess, ctx->iface_name);
+
+	return nwif_conf_close_clui_session(&sess);
+}
+
+static int
+nwif_conf_clui_show_iface_byid(struct nwif_conf_clui_session *session,
+                               const struct kvs_autorec_id    id)
+{
+	struct nwif_iface_conf *iface;
+	int                     ret;
+
+	iface = nwif_iface_conf_create_byid(id, &session->xact, session->repo);
+	if (!iface) {
+		char str[NWIF_CONF_ID_STRING_MAX];
+
+		nwif_ui_sprintf_conf_id(str, id);
+		nwif_conf_clui_err(session->parser,
+		                   -errno,
+		                   "failed to show interface identified by "
+		                   "'%s'",
+		                   str);
+		return -errno;
+	}
+
+	ret = nwif_conf_clui_show_iface(session, iface);
+
+	nwif_iface_conf_destroy(iface);
+
+	return ret;
+}
+
+static int
+nwif_conf_clui_exec_show_iface_byid(const struct nwif_conf_clui_ctx *ctx,
+                                    const struct clui_parser        *parser)
+{
+	nwif_ui_assert(ctx);
+
+	struct nwif_conf_clui_session sess;
+	int                           err;
+
+	err = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	if (err)
+		return err;
+
+	nwif_conf_clui_show_iface_byid(&sess, ctx->iface_id);
 
 	return nwif_conf_close_clui_session(&sess);
 }
@@ -1000,10 +903,12 @@ nwif_conf_clui_parse_iface_show(const struct clui_cmd *cmd,
                                 char * const           argv[],
                                 void                  *ctx)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	if (argc == 1) {
-		const char *arg = argv[0];
+		const char                *arg = argv[0];
+		struct nwif_conf_clui_ctx *nctx;
+		int                        ret;
 
 		if (!strcmp(arg, "help")) {
 			nwif_conf_clui_sched_help(ctx, cmd);
@@ -1016,15 +921,26 @@ nwif_conf_clui_parse_iface_show(const struct clui_cmd *cmd,
 			return 0;
 		}
 
-		if (unet_check_iface_name(arg) < 0) {
-			clui_err(parser, "invalid interface name '%s'.\n", arg);
-			return -EINVAL;
+		nctx = (struct nwif_conf_clui_ctx *)ctx;
+
+		ret = nwif_ui_parse_conf_id(arg, &nctx->iface_id);
+		if (!ret) {
+			nwif_conf_clui_sched_exec(
+				ctx, nwif_conf_clui_exec_show_iface_byid);
+			return 0;
 		}
 
-		((struct nwif_conf_clui_ctx *)ctx)->iface_name = arg;
-		nwif_conf_clui_sched_exec(ctx,
-		                          nwif_conf_clui_exec_show_one_iface);
-		return 0;
+		ret = nwif_ui_parse_iface_name(arg);
+		if (ret > 0) {
+			nctx->iface_name = arg;
+			nwif_conf_clui_sched_exec(
+				ctx, nwif_conf_clui_exec_show_iface_byname);
+			return 0;
+		}
+
+		clui_err(parser, "invalid interface name or id '%s'.\n", arg);
+
+		return -EINVAL;
 	}
 	else if (!argc) {
 		nwif_conf_clui_sched_exec(ctx,
@@ -1075,7 +991,7 @@ static int
 nwif_conf_clui_exec_del_iface_byid(const struct nwif_conf_clui_ctx *ctx,
                                    const struct clui_parser        *parser)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	struct nwif_conf_clui_session sess;
 	int                           err;
@@ -1084,9 +1000,7 @@ nwif_conf_clui_exec_del_iface_byid(const struct nwif_conf_clui_ctx *ctx,
 	if (err)
 		return err;
 
-	err = nwif_iface_conf_del_byid(ctx->iface_id,
-	                               &sess.xact,
-	                               sess.repo);
+	err = nwif_iface_conf_del_byid(ctx->iface_id, &sess.xact, sess.repo);
 	if (err) {
 		char str[NWIF_CONF_ID_STRING_MAX];
 
@@ -1096,7 +1010,6 @@ nwif_conf_clui_exec_del_iface_byid(const struct nwif_conf_clui_ctx *ctx,
 		                   "failed to delete interface identified by "
 		                   "'%s'",
 		                   str);
-
 	}
 
 	sess.err = err;
@@ -1108,9 +1021,32 @@ static int
 nwif_conf_clui_exec_del_iface_byname(const struct nwif_conf_clui_ctx *ctx,
                                      const struct clui_parser        *parser)
 {
-#warning IMPLEMENT ME!!
+	nwif_ui_assert(ctx);
 
-	return -ENOSYS;
+	struct nwif_conf_clui_session sess;
+	int                           err;
+
+	err = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	if (err)
+		return err;
+
+	err = nwif_iface_conf_del_byname(ctx->iface_name,
+	                                 strlen(ctx->iface_name),
+	                                 &sess.xact,
+	                                 sess.repo);
+	if (err) {
+		char str[NWIF_CONF_ID_STRING_MAX];
+
+		nwif_ui_sprintf_conf_id(str, ctx->iface_id);
+		nwif_conf_clui_err(parser,
+		                   err,
+		                   "failed to delete interface '%s'",
+		                   ctx->iface_name);
+	}
+
+	sess.err = err;
+
+	return nwif_conf_close_clui_session(&sess);
 }
 
 static int
@@ -1120,7 +1056,7 @@ nwif_conf_clui_parse_del_iface(const struct clui_cmd *cmd,
                                char * const           argv[],
                                void                  *ctx)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	struct nwif_conf_clui_ctx *nctx = (struct nwif_conf_clui_ctx *)ctx;
 	const char                *arg = argv[0];
@@ -1200,7 +1136,7 @@ nwif_conf_clui_parse_iface(const struct clui_cmd *cmd,
                            char * const           argv[],
                            void                  *ctx)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	if (argc < 1) {
 		clui_err(parser, "invalid number of arguments.\n");
@@ -1304,7 +1240,7 @@ nwif_conf_clui_parse(const struct clui_cmd *cmd,
                      char * const           argv[],
                      void                  *ctx)
 {
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(ctx);
 
 	if (argc < 1) {
 		clui_err(parser, "missing argument.\n");
@@ -1349,10 +1285,10 @@ nwif_conf_clui_parse_dbdir(const struct clui_opt    *opt,
                            const char               *arg,
                            void                     *ctx)
 {
-	nwif_conf_clui_assert(opt);
-	nwif_conf_clui_assert(parser);
-	nwif_conf_clui_assert(arg);
-	nwif_conf_clui_assert(ctx);
+	nwif_ui_assert(opt);
+	nwif_ui_assert(parser);
+	nwif_ui_assert(arg);
+	nwif_ui_assert(ctx);
 
 	if (upath_validate_path_name(arg) > 0) {
 		((struct nwif_conf_clui_ctx *)ctx)->path = arg;

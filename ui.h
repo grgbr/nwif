@@ -4,8 +4,23 @@
 #include <nwif/nwif.h>
 #include <sys/types.h>
 #include <kvstore/autorec.h>
+#include <libsmartcols/libsmartcols.h>
+
+#if defined(CONFIG_NWIF_ASSERT)
+
+#include <utils/assert.h>
+
+#define nwif_ui_assert(_expr) \
+	uassert("nwif_ui", _expr)
+
+#else  /* !defined(CONFIG_NWIF_ASSERT) */
+
+#define nwif_ui_assert(_expr)
+
+#endif /* defined(CONFIG_NWIF_ASSERT) */
 
 struct ether_addr;
+struct nwif_iface_conf;
 
 extern const char *
 nwif_ui_get_iface_type_label(enum nwif_iface_type type);
@@ -39,5 +54,28 @@ nwif_ui_resolve_syspath(const char *arg, char **syspath);
 
 extern int
 nwif_ui_parse_hwaddr(const char *arg, struct ether_addr *addr);
+
+extern int
+nwif_ui_render_iface_conf_table(struct libscols_table        *table,
+                                const struct nwif_iface_conf *iface);
+
+static inline void
+nwif_ui_display_iface_conf_table(struct libscols_table *table)
+{
+	nwif_ui_assert(table);
+
+	scols_print_table(table);
+}
+
+extern struct libscols_table *
+nwif_ui_create_iface_conf_table(void);
+
+static inline void
+nwif_ui_destroy_iface_conf_table(struct libscols_table *table)
+{
+	nwif_ui_assert(table);
+
+	scols_unref_table(table);
+}
 
 #endif /* _NWIF_UI_H */

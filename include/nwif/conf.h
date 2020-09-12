@@ -50,6 +50,12 @@ nwif_iface_conf_del_byid(struct kvs_autorec_id        id,
                          const struct kvs_xact       *xact,
                          const struct nwif_conf_repo *repo);
 
+extern int
+nwif_iface_conf_del_byname(const char                  *name,
+                           size_t                       len,
+                           const struct kvs_xact       *xact,
+                           const struct nwif_conf_repo *repo);
+
 extern struct nwif_iface_conf *
 nwif_iface_conf_create_from_desc(const struct kvs_autorec_desc *desc);
 
@@ -57,6 +63,12 @@ extern struct nwif_iface_conf *
 nwif_iface_conf_create_byid(struct kvs_autorec_id        id,
                             const struct kvs_xact       *xact,
                             const struct nwif_conf_repo *repo);
+
+extern struct nwif_iface_conf *
+nwif_iface_conf_create_byname(const char                  *name,
+                              size_t                       len,
+                              const struct kvs_xact       *xact,
+                              const struct nwif_conf_repo *repo);
 
 extern void
 nwif_iface_conf_destroy(struct nwif_iface_conf *conf);

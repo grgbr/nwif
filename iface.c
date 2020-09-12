@@ -353,6 +353,22 @@ nwif_iface_conf_del_byid(struct kvs_autorec_id        id,
 	return kvs_autorec_del(&repo->ifaces.data, xact, id);
 }
 
+int
+nwif_iface_conf_del_byname(const char                  *name,
+                           size_t                       len,
+                           const struct kvs_xact       *xact,
+                           const struct nwif_conf_repo *repo)
+{
+	nwif_assert(unet_check_iface_name(name) == (ssize_t)len);
+
+	struct kvs_chunk field = { .size = len, .data = name };
+
+	return kvs_autorec_del_byfield(
+		&repo->ifaces.idx[NWIF_IFACE_CONF_NAMES_SID],
+		xact,
+		&field);
+}
+
 struct nwif_iface_conf *
 nwif_iface_conf_create_from_desc(const struct kvs_autorec_desc *desc)
 {
@@ -387,6 +403,37 @@ nwif_iface_conf_create_byid(struct kvs_autorec_id        id,
 		errno = -err;
 		return NULL;
 	}
+
+	return nwif_iface_conf_create_from_desc(&desc);
+}
+
+struct nwif_iface_conf *
+nwif_iface_conf_create_byname(const char                  *name,
+                              size_t                       len,
+                              const struct kvs_xact       *xact,
+                              const struct nwif_conf_repo *repo)
+{
+	int                     ret;
+	const struct kvs_chunk  field = {
+		.size = len,
+		.data = name
+	};
+	struct kvs_autorec_desc desc;
+
+	ret = kvs_autorec_get_byfield(
+		&repo->ifaces.idx[NWIF_IFACE_CONF_NAMES_SID],
+		xact,
+		&field,
+		&desc.id,
+		&desc.data);
+	nwif_assert(ret);
+
+	if (ret < 0) {
+		errno = -ret;
+		return NULL;
+	}
+
+	desc.size = (size_t)ret;
 
 	return nwif_iface_conf_create_from_desc(&desc);
 }
