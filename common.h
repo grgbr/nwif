@@ -19,15 +19,6 @@
 
 #endif /* defined(CONFIG_NWIF_ASSERT) */
 
-enum nwif_attr_type {
-	NWIF_NAME_ATTR       = (1U << 0),
-	NWIF_OPER_STATE_ATTR = (1U << 1),
-	NWIF_MTU_ATTR        = (1U << 2),
-	NWIF_SYSPATH_ATTR    = (1U << 3),
-	NWIF_HWADDR_ATTR     = (1U << 4),
-	NWIF_ATTR_NR
-};
-
 extern int
 nwif_iface_probe_sysid(const char *syspath);
 

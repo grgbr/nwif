@@ -27,15 +27,24 @@ typedef int (nwif_conf_clui_exec_fn)
             (const struct nwif_conf_clui_ctx *ctx,
              const struct clui_parser        *parser);
 
+struct nwif_iface_conf_attrs {
+	unsigned int       mask;
+	const char        *name;
+	uint8_t            oper_state;
+	uint32_t           mtu;
+	char              *syspath;
+	struct ether_addr  hwaddr;
+};
+
 struct nwif_conf_clui_ctx {
-	nwif_conf_clui_exec_fn         *exec;
-	const char                     *path;
+	nwif_conf_clui_exec_fn               *exec;
+	const char                           *path;
 	union {
-		const struct clui_cmd  *cmd;
-		uint64_t                iface_id;
-		const char             *iface_name;
-		struct nwif_iface_conf *iface_conf;
+		const struct clui_cmd        *cmd;
+		uint64_t                      iface_id;
+		const char                   *iface_name;
 	};
+	struct nwif_iface_conf_attrs          iface_attrs;
 };
 
 static void
@@ -207,11 +216,9 @@ nwif_conf_clui_parse_iface_name(const struct clui_cmd *cmd,
 	nwif_ui_assert(arg);
 	nwif_ui_assert(ctx);
 
-	ssize_t                 len;
-	struct nwif_iface_conf *conf = ((struct nwif_conf_clui_ctx *)
-	                                ctx)->iface_conf;
-
-	nwif_ui_assert(conf);
+	ssize_t                       len;
+	struct nwif_iface_conf_attrs *attrs = &((struct nwif_conf_clui_ctx *)
+	                                        ctx)->iface_attrs;
 
 	len = nwif_ui_parse_iface_name(arg);
 	if (len < 0) {
@@ -223,7 +230,8 @@ nwif_conf_clui_parse_iface_name(const struct clui_cmd *cmd,
 		return len;
 	}
 
-	nwif_iface_conf_set_name(conf, arg, len);
+	attrs->name = arg;
+	attrs->mask |= NWIF_NAME_ATTR;
 
 	return 0;
 }
@@ -244,18 +252,15 @@ nwif_conf_clui_parse_iface_oper_state(const struct clui_cmd *cmd,
 	nwif_ui_assert(arg);
 	nwif_ui_assert(ctx);
 
-	int                     err;
-	uint8_t                 oper;
-	const char             *reason;
-	struct nwif_iface_conf *conf = ((struct nwif_conf_clui_ctx *)
-	                                ctx)->iface_conf;
+	int                           err;
+	const char                   *reason;
+	struct nwif_iface_conf_attrs *attrs = &((struct nwif_conf_clui_ctx *)
+	                                        ctx)->iface_attrs;
 
-	nwif_ui_assert(conf);
-
-	err = nwif_ui_parse_oper_state(arg, &oper);
+	err = nwif_ui_parse_oper_state(arg, &attrs->oper_state);
 	switch (err) {
 	case 0:
-		nwif_iface_conf_set_oper_state(conf, oper);
+		attrs->mask |= NWIF_OPER_STATE_ATTR;
 		return 0;
 
 	case -ENOENT:
@@ -296,16 +301,13 @@ nwif_conf_clui_parse_iface_mtu(const struct clui_cmd *cmd,
 	nwif_ui_assert(arg);
 	nwif_ui_assert(ctx);
 
-	int                     err;
-	uint32_t                mtu;
-	struct nwif_iface_conf *conf = ((struct nwif_conf_clui_ctx *)
-	                                ctx)->iface_conf;
+	int                           err;
+	struct nwif_iface_conf_attrs *attrs = &((struct nwif_conf_clui_ctx *)
+	                                        ctx)->iface_attrs;
 
-	nwif_ui_assert(conf);
-
-	err = nwif_ui_parse_mtu(arg, &mtu);
+	err = nwif_ui_parse_mtu(arg, &attrs->mtu);
 	if (!err) {
-		nwif_iface_conf_set_mtu(conf, mtu);
+		attrs->mask |= NWIF_MTU_ATTR;
 		return 0;
 	}
 
@@ -323,42 +325,104 @@ static const struct clui_kword_parm nwif_conf_clui_iface_mtu_parm = {
 };
 
 static int
-nwif_conf_clui_new_iface(struct nwif_conf_clui_session *session,
-                         struct nwif_iface_conf        *conf)
+nwif_conf_clui_parse_iface_syspath(const struct clui_cmd *cmd,
+                                   struct clui_parser    *parser,
+                                   const char            *arg,
+                                   void                  *ctx)
 {
-	nwif_ui_assert_session(session);
-
-	session->err = nwif_iface_conf_save(conf,
-	                                    &session->xact,
-	                                    session->repo);
-
-	return session->err;
-}
-
-static int
-nwif_conf_clui_exec_new_iface(const struct nwif_conf_clui_ctx *ctx,
-                              const struct clui_parser        *parser)
-{
+	nwif_ui_assert(cmd);
+	nwif_ui_assert(parser);
+	nwif_ui_assert(arg);
 	nwif_ui_assert(ctx);
 
-	struct nwif_conf_clui_session sess;
-	int                           ret;
+	ssize_t                       ret;
+	const char                   *reason;
+	struct nwif_iface_conf_attrs *attrs = &((struct nwif_conf_clui_ctx *)
+	                                        ctx)->iface_attrs;
 
-	ret = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
-	if (ret)
-		goto destroy;
+	ret = nwif_ui_normalize_syspath(arg, &attrs->syspath);
+	if (ret > 0) {
+		attrs->mask |= NWIF_SYSPATH_ATTR;
+		return 0;
+	}
 
-	nwif_conf_clui_new_iface(&sess, ctx->iface_conf);
+	switch (ret) {
+	case -ENOENT:
+		reason = "not a sysfs device path";
+		break;
 
-	ret = nwif_conf_close_clui_session(&sess);
-	if (ret)
-		nwif_conf_clui_err(parser, ret, "failed to create interface");
+	case -ENAMETOOLONG:
+		reason = "pathname too long";
+		break;
 
-destroy:
-	nwif_iface_conf_destroy(ctx->iface_conf);
+	case -ENOMEM:
+		return -ENOMEM;
+
+	default:
+		ret = -EIO;
+		reason = "unknown failure";
+		break;
+	}
+
+	clui_err(parser,
+	         "invalid sysfs network device path '%.*s': %s.",
+	         UNET_IFACE_SYSPATH_MAX,
+	         arg,
+	         reason);
 
 	return ret;
 }
+
+static const struct clui_kword_parm nwif_conf_clui_iface_syspath_parm = {
+	.kword = "syspath",
+	.parse = nwif_conf_clui_parse_iface_syspath
+};
+
+static int
+nwif_conf_clui_parse_iface_hwaddr(const struct clui_cmd *cmd,
+                                  struct clui_parser    *parser,
+                                  const char            *arg,
+                                  void                  *ctx)
+{
+	nwif_ui_assert(cmd);
+	nwif_ui_assert(parser);
+	nwif_ui_assert(arg);
+	nwif_ui_assert(ctx);
+
+	int                           err;
+	const char                   *reason;
+	struct nwif_iface_conf_attrs *attrs = &((struct nwif_conf_clui_ctx *)
+	                                        ctx)->iface_attrs;
+
+	err = nwif_ui_parse_hwaddr(arg, &attrs->hwaddr);
+	switch (err) {
+	case 0:
+		attrs->mask |= NWIF_HWADDR_ATTR;
+		return 0;
+
+	case -EINVAL:
+		reason = "invalid hardware address '%.*s': bad EUI-48 format.";
+		break;
+
+	case -EPERM:
+		reason = "invalid hardware address '%.*s': "
+		         "not locally administered and/or unicast.";
+		break;
+
+	default:
+		err = -EIO;
+		reason = "invalid hardware address '%.*s': unknown failure";
+	}
+
+	clui_err(parser, reason, UNET_HWADDR_STRING_MAX - 1, arg);
+
+	return err;
+}
+
+static const struct clui_kword_parm nwif_conf_clui_iface_hwaddr_parm = {
+	.kword = "hwaddr",
+	.parse = nwif_conf_clui_parse_iface_hwaddr
+};
 
 /******************************************************************************
  * Ethernet interface handling
@@ -400,111 +464,99 @@ destroy:
 	"    <IFACE_HWADDR> -- unicast 48-bit MAC address, standard hexadecimal\n" \
 	"                      digits and colons notation.\n"
 
-static ssize_t
-nwif_conf_clui_parse_ether_syspath(const struct clui_parser *parser,
-                                   const char               *arg,
-                                   struct nwif_iface_conf   *conf)
-{
-	nwif_ui_assert(parser);
-	nwif_ui_assert(arg);
-	nwif_ui_assert(conf);
-
-	char       *syspath;
-	ssize_t     ret;
-	const char *reason;
-
-	ret = nwif_ui_normalize_syspath(arg, &syspath);
-	if (ret > 0) {
-		nwif_ether_conf_set_syspath(nwif_ether_conf_from_iface(conf),
-		                            syspath,
-		                            (size_t)ret);
-		free(syspath);
-		return 0;
-	}
-
-	switch (ret) {
-	case -ENOENT:
-		reason = "not a sysfs device path";
-		break;
-
-	case -ENAMETOOLONG:
-		reason = "pathname too long";
-		break;
-
-	case -ENOMEM:
-		return -ENOMEM;
-
-	default:
-		ret = -EIO;
-		reason = "unknown failure";
-		break;
-	}
-
-	clui_err(parser,
-	         "invalid sysfs network device path '%.*s': %s.",
-	         UNET_IFACE_SYSPATH_MAX,
-	         arg,
-	         reason);
-
-	return ret;
-}
-
-static int
-nwif_conf_clui_parse_ether_hwaddr(const struct clui_cmd *cmd,
-                                  struct clui_parser    *parser,
-                                  const char            *arg,
-                                  void                  *ctx)
-{
-	nwif_ui_assert(cmd);
-	nwif_ui_assert(parser);
-	nwif_ui_assert(arg);
-	nwif_ui_assert(ctx);
-
-	int                     err;
-	struct ether_addr       addr;
-	const char             *reason;
-	struct nwif_iface_conf *conf = ((struct nwif_conf_clui_ctx *)
-	                                ctx)->iface_conf;
-
-	nwif_ui_assert(conf);
-
-	err = nwif_ui_parse_hwaddr(arg, &addr);
-	switch (err) {
-	case 0:
-		nwif_ether_conf_set_hwaddr(nwif_ether_conf_from_iface(conf),
-		                           &addr);
-		return 0;
-
-	case -EINVAL:
-		reason = "invalid hardware address '%.*s': bad EUI-48 format.";
-		break;
-
-	case -EPERM:
-		reason = "invalid hardware address '%.*s': "
-		         "not locally administered and/or unicast.";
-		break;
-
-	default:
-		err = -EIO;
-		reason = "invalid hardware address '%.*s': unknown failure";
-	}
-
-	clui_err(parser, reason, UNET_HWADDR_STRING_MAX - 1, arg);
-
-	return err;
-}
-
-static const struct clui_kword_parm nwif_conf_clui_ether_hwaddr_parm = {
-	.kword = "hwaddr",
-	.parse = nwif_conf_clui_parse_ether_hwaddr
-};
-
 static const struct clui_kword_parm * const nwif_ether_conf_option_parms[] = {
 	&nwif_conf_clui_iface_name_parm,
 	&nwif_conf_clui_iface_oper_state_parm,
 	&nwif_conf_clui_iface_mtu_parm,
-	&nwif_conf_clui_ether_hwaddr_parm
+	&nwif_conf_clui_iface_hwaddr_parm
 };
+
+static int
+nwif_conf_clui_fill_ether(struct nwif_ether_conf             *conf,
+                          const struct nwif_iface_conf_attrs *attrs)
+{
+	nwif_ui_assert(conf);
+	nwif_ui_assert(attrs);
+
+	if (attrs->mask & ~(NWIF_NAME_ATTR | NWIF_OPER_STATE_ATTR |
+	                    NWIF_MTU_ATTR | NWIF_SYSPATH_ATTR |
+	                    NWIF_HWADDR_ATTR))
+		return -ENOTSUP;
+
+	if (attrs->mask & NWIF_NAME_ATTR)
+		nwif_iface_conf_set_name(nwif_ether_conf_to_iface(conf),
+		                         attrs->name,
+		                         strlen(attrs->name));
+
+	if (attrs->mask & NWIF_OPER_STATE_ATTR)
+		nwif_iface_conf_set_oper_state(nwif_ether_conf_to_iface(conf),
+		                               attrs->oper_state);
+
+	if (attrs->mask & NWIF_MTU_ATTR)
+		nwif_iface_conf_set_oper_state(nwif_ether_conf_to_iface(conf),
+		                               attrs->mtu);
+
+	if (attrs->mask & NWIF_SYSPATH_ATTR)
+		nwif_ether_conf_set_syspath(conf,
+		                            attrs->syspath,
+		                            strlen(attrs->syspath));
+
+	if (attrs->mask & NWIF_HWADDR_ATTR)
+		nwif_ether_conf_set_hwaddr(conf, &attrs->hwaddr);
+
+	return 0;
+}
+
+static int
+nwif_conf_clui_exec_new_ether(const struct nwif_conf_clui_ctx *ctx,
+                              const struct clui_parser        *parser)
+{
+	nwif_ui_assert(ctx);
+
+	struct nwif_ether_conf        *conf;
+	struct nwif_conf_clui_session  sess;
+	int                            ret;
+
+	conf = nwif_ether_conf_create();
+	if (!conf) {
+		ret = -errno;
+		nwif_conf_clui_err(
+			parser,
+			ret,
+			"failed to allocate interface");
+		goto free;
+	}
+
+	ret = nwif_conf_clui_fill_ether(conf, &ctx->iface_attrs);
+	if (ret) {
+		clui_err(parser,
+		         "failed to create ethernet interface: "
+		         "unexpected attributes set.");
+		goto destroy;
+	}
+
+	ret = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	if (ret)
+		goto destroy;
+
+	sess.err = nwif_iface_conf_save(nwif_ether_conf_to_iface(conf),
+	                                &sess.xact,
+	                                sess.repo);
+	if (sess.err)
+		nwif_conf_clui_err(parser,
+		                   sess.err,
+		                   "failed to create ethernet interface");
+
+	ret = nwif_conf_close_clui_session(&sess);
+
+destroy:
+	nwif_iface_conf_destroy(nwif_ether_conf_to_iface(conf));
+
+free:
+	free(ctx->iface_attrs.syspath);
+
+	return ret;
+}
 
 static int
 nwif_conf_clui_parse_new_ether(const struct clui_cmd *cmd,
@@ -515,9 +567,7 @@ nwif_conf_clui_parse_new_ether(const struct clui_cmd *cmd,
 {
 	nwif_ui_assert(ctx);
 
-	struct nwif_ether_conf    *conf;
-	struct nwif_conf_clui_ctx *nctx;
-	int                        ret;
+	int ret;
 
 	if (argc < 1 || argc > 9) {
 		clui_err(parser, "invalid number of arguments.\n");
@@ -529,24 +579,9 @@ nwif_conf_clui_parse_new_ether(const struct clui_cmd *cmd,
 		return 0;
 	}
 
-	conf = nwif_ether_conf_create();
-	if (!conf) {
-		ret = -errno;
-		nwif_conf_clui_err(
-			parser,
-			ret,
-			"failed to allocate interface");
-		return ret;
-	}
-
-	nctx = (struct nwif_conf_clui_ctx *)ctx;
-	nctx->iface_conf = nwif_ether_conf_to_iface(conf);
-
-	ret = nwif_conf_clui_parse_ether_syspath(parser,
-	                                         argv[0],
-	                                         nctx->iface_conf);
+	ret = nwif_conf_clui_parse_iface_syspath(cmd, parser, argv[0], ctx);
 	if (ret)
-		goto destroy;
+		return ret;
 
 	if (argc > 1) {
 		ret = clui_parse_all_kword_parms(
@@ -558,15 +593,15 @@ nwif_conf_clui_parse_new_ether(const struct clui_cmd *cmd,
 			&argv[1],
 			ctx);
 		if (ret)
-			goto destroy;
+			goto free;
 	}
 
-	nwif_conf_clui_sched_exec(ctx, nwif_conf_clui_exec_new_iface);
+	nwif_conf_clui_sched_exec(ctx, nwif_conf_clui_exec_new_ether);
 
 	return 0;
 
-destroy:
-	nwif_iface_conf_destroy(nctx->iface_conf);
+free:
+	free(((struct nwif_conf_clui_ctx *)ctx)->iface_attrs.syspath);
 
 	return ret;
 
@@ -658,21 +693,288 @@ static const struct clui_cmd nwif_conf_clui_iface_new_cmd = {
 };
 
 /******************************************************************************
+ * iface setup command handling
+ ******************************************************************************/
+
+#define NWIF_CONF_CLUI_IFACE_SET_HELP \
+	"Synopsis:\n" \
+	"    %1$s iface set <IFACE_ID> <ETHER_SET_SPEC>\n" \
+	"    %1$s iface set <IFACE_NAME> <ETHER_SET_SPEC>\n" \
+	"    Setup attributes of ethernet interface specified by <IFACE_ID> or\n" \
+	"    <IFACE_NAME> according to <ETHER_SET_SPEC>.\n" \
+	"\n" \
+	"    %1$s iface set help\n" \
+	"    This help message.\n" \
+	"\n" \
+	"With:\n" \
+	"    ETHER_SET_SPEC := [SYSPATH_SPEC] [NAME_SPEC] [OPER_SPEC] [MTU_SPEC] [HWADDR_SPEC]\n" \
+	"    SYSPATH_SPEC   := syspath <SYSPATH>\n" \
+	"    NAME_SPEC      := name <IFACE_NAME>\n" \
+	"    OPER_SPEC      := oper <IFACE_OPER>\n" \
+	"    IFACE_OPER     := up|down\n" \
+	"    MTU_SPEC       := mtu <IFACE_MTU>\n" \
+	"    HWADDR_SPEC    := hwaddr <IFACE_HWADDR>\n" \
+	"\n" \
+	"Where:\n" \
+	NWIF_CONF_CLUI_IFACE_ID_WHERE \
+	NWIF_CONF_CLUI_IFACE_NAME_WHERE \
+	"    <SYSPATH>      -- sysfs network interface path, a non empty string.\n" \
+	"    <IFACE_NAME>   -- interface name, a non empty string.\n" \
+	"    <IFACE_OPER>   -- interface required operational state.\n" \
+	"    <IFACE_MTU>    -- maximum transfer unit in bytes,\n" \
+	"                      integer [0:" USTRINGIFY(IP_MAXPACKET) "].\n" \
+	"    <IFACE_HWADDR> -- unicast 48-bit MAC address, standard hexadecimal\n" \
+	"                      digits and colons notation.\n"
+
+static const struct clui_kword_parm * const nwif_iface_conf_option_parms[] = {
+	&nwif_conf_clui_iface_syspath_parm,
+	&nwif_conf_clui_iface_name_parm,
+	&nwif_conf_clui_iface_oper_state_parm,
+	&nwif_conf_clui_iface_mtu_parm,
+	&nwif_conf_clui_iface_hwaddr_parm
+};
+
+static int
+nwif_conf_clui_exec_set_iface_byid(const struct nwif_conf_clui_ctx *ctx,
+                                   const struct clui_parser        *parser)
+{
+	nwif_ui_assert(ctx);
+
+	struct nwif_conf_clui_session       sess;
+	const struct nwif_iface_conf_attrs *attrs = &ctx->iface_attrs;
+	struct nwif_iface_conf             *conf;
+	int                                 ret;
+
+	ret = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	if (ret)
+		goto free;
+
+	conf = nwif_iface_conf_create_byid(ctx->iface_id, &sess.xact, sess.repo);
+	if (!conf) {
+		ret = -errno;
+		nwif_conf_clui_err(parser,
+		                   ret,
+		                   "failed to load '%" PRIx64 "' interface",
+		                   ctx->iface_id);
+		goto close;
+	}
+
+	switch (nwif_iface_conf_get_type(conf)) {
+	case NWIF_ETHER_IFACE_TYPE:
+		ret = nwif_conf_clui_fill_ether(
+			nwif_ether_conf_from_iface(conf), &ctx->iface_attrs);
+		if (ret) {
+			clui_err(parser,
+			         "failed to setup '%" PRIx64 "' ethernet "
+			         "interface: unexpected attributes set.",
+		                 ctx->iface_id);
+		}
+		break;
+
+	default:
+		nwif_ui_assert(0);
+	}
+
+	if (ret)
+		goto destroy;
+
+	ret = nwif_iface_conf_save(conf, &sess.xact, sess.repo);
+	if (ret)
+		nwif_conf_clui_err(parser,
+		                   ret,
+		                   "failed to save '%" PRIx64 "' interface",
+		                   ctx->iface_id);
+
+destroy:
+	nwif_iface_conf_destroy(conf);
+
+close:
+	sess.err = ret;
+	ret = nwif_conf_close_clui_session(&sess);
+
+free:
+	if (attrs->mask & NWIF_SYSPATH_ATTR)
+		free(attrs->syspath);
+
+	return ret;
+}
+
+static int
+nwif_conf_clui_exec_set_iface_byname(const struct nwif_conf_clui_ctx *ctx,
+                                     const struct clui_parser        *parser)
+{
+	nwif_ui_assert(ctx);
+
+	struct nwif_conf_clui_session       sess;
+	const struct nwif_iface_conf_attrs *attrs = &ctx->iface_attrs;
+	struct nwif_iface_conf             *conf;
+	int                                 ret;
+
+	ret = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	if (ret)
+		goto free;
+
+	conf = nwif_iface_conf_create_byname(ctx->iface_name,
+	                                     strlen(ctx->iface_name),
+	                                     &sess.xact,
+	                                     sess.repo);
+	if (!conf) {
+		ret = -errno;
+		nwif_conf_clui_err(parser,
+		                   ret,
+		                   "failed to load '%s' interface",
+		                   ctx->iface_name);
+		goto close;
+	}
+
+	switch (nwif_iface_conf_get_type(conf)) {
+	case NWIF_ETHER_IFACE_TYPE:
+		ret = nwif_conf_clui_fill_ether(
+			nwif_ether_conf_from_iface(conf), &ctx->iface_attrs);
+		if (ret) {
+			clui_err(parser,
+			         "failed to setup '%s' ethernet interface: "
+			         "unexpected attributes set.",
+			         ctx->iface_name);
+		}
+		break;
+
+	default:
+		nwif_ui_assert(0);
+	}
+
+	if (ret)
+		goto destroy;
+
+	ret = nwif_iface_conf_save(conf, &sess.xact, sess.repo);
+	if (ret)
+		nwif_conf_clui_err(parser,
+		                   ret,
+		                   "failed to save '%s' interface",
+		                   ctx->iface_name);
+
+
+destroy:
+	nwif_iface_conf_destroy(conf);
+
+close:
+	sess.err = ret;
+	ret = nwif_conf_close_clui_session(&sess);
+
+free:
+	if (attrs->mask & NWIF_SYSPATH_ATTR)
+		free(attrs->syspath);
+
+	return ret;
+}
+
+static int
+nwif_conf_clui_parse_set_iface(const struct clui_cmd *cmd,
+                               struct clui_parser    *parser,
+                               int                    argc,
+                               char * const           argv[],
+                               void                  *ctx)
+{
+	nwif_ui_assert(ctx);
+
+	struct nwif_conf_clui_ctx    *nctx = (struct nwif_conf_clui_ctx *)ctx;
+	struct nwif_iface_conf_attrs *attrs = &nctx->iface_attrs;
+	nwif_conf_clui_exec_fn       *exec;
+	int                           ret;
+
+	if (argc < 1) {
+		clui_err(parser, "missing arguments.\n");
+		goto help;
+	}
+
+	if (!strcmp(argv[0], "help")) {
+		nwif_conf_clui_sched_help(ctx, cmd);
+		return 0;
+	}
+
+	if (argc < 2 || argc > 11) {
+		clui_err(parser, "invalid number of arguments.\n");
+		goto help;
+	}
+
+	ret = nwif_ui_parse_conf_id(argv[0], &nctx->iface_id);
+	if (!ret) {
+		exec = nwif_conf_clui_exec_set_iface_byid;
+		goto attrs;
+	}
+
+	ret = nwif_ui_parse_iface_name(argv[0]);
+	if (ret > 0) {
+		nctx->iface_name = argv[0];
+		exec = nwif_conf_clui_exec_set_iface_byname;
+		goto attrs;
+	}
+
+	clui_err(parser, "invalid interface name or id '%s'.\n", argv[0]);
+
+	return -EINVAL;
+
+attrs:
+	if (argc > 1) {
+		ret = clui_parse_all_kword_parms(
+			cmd,
+			parser,
+			nwif_iface_conf_option_parms,
+			array_nr(nwif_iface_conf_option_parms),
+			argc - 1,
+			&argv[1],
+			ctx);
+		if (ret)
+			goto free;
+	}
+
+	nwif_conf_clui_sched_exec(ctx, exec);
+
+	return 0;
+
+free:
+	if (attrs->mask & NWIF_SYSPATH_ATTR)
+		free(attrs->syspath);
+
+	return ret;
+
+help:
+	clui_help_cmd(cmd, parser, stderr);
+
+	return -EINVAL;
+}
+
+static void
+nwif_conf_clui_iface_set_help(const struct clui_cmd    *cmd __unused,
+                              const struct clui_parser *parser,
+                              FILE                     *stdio)
+{
+	fprintf(stdio, NWIF_CONF_CLUI_IFACE_SET_HELP, parser->argv0);
+}
+
+static const struct clui_cmd nwif_conf_clui_iface_set_cmd = {
+	.parse = nwif_conf_clui_parse_set_iface,
+	.help  = nwif_conf_clui_iface_set_help
+};
+
+/******************************************************************************
  * iface show command handling
  ******************************************************************************/
 
 #define NWIF_CONF_CLUI_IFACE_SHOW_HELP \
 	"Synopsis:\n" \
+	"    %1$s iface show <IFACE_ID>\n" \
 	"    %1$s iface show <IFACE_NAME>\n" \
-	"    Show properties of interface specified by <IFACE_NAME>.\n" \
+	"    Show attributes of interface specified by <IFACE_ID> or <IFACE_NAME>.\n" \
 	"\n" \
 	"    %1$s iface show [all]\n" \
-	"    Show properties of all interfaces.\n" \
+	"    Show attributes of all interfaces.\n" \
 	"\n" \
 	"    %1$s iface show help\n" \
 	"    This help message.\n" \
 	"\n" \
 	"Where:\n" \
+	NWIF_CONF_CLUI_IFACE_ID_WHERE \
 	NWIF_CONF_CLUI_IFACE_NAME_WHERE
 
 static int
@@ -1114,10 +1416,13 @@ static const struct clui_cmd nwif_conf_clui_iface_del_cmd = {
 #define NWIF_CONF_CLUI_IFACE_HELP \
 	"Synopsis:\n" \
 	"    %1$s iface show [IFACE_SHOW_SPEC] | help\n" \
-	"    Show properties of interface according to [IFACE_SHOW_SPEC].\n" \
+	"    Show attributes of interface according to [IFACE_SHOW_SPEC].\n" \
 	"\n" \
 	"    %1$s iface new <IFACE_NEW_SPEC> | help\n" \
 	"    Create new interface according to <IFACE_NEW_SPEC>.\n" \
+	"\n" \
+	"    %1$s iface set <IFACE_SET_SPEC> | help\n" \
+	"    Setup interface attributes according to <IFACE_SET_SPEC>.\n" \
 	"\n" \
 	"    %1$s iface del <IFACE_DEL_SPEC> | help\n" \
 	"    Delete interface according to <IFACE_DEL_SPEC>.\n" \
@@ -1127,7 +1432,8 @@ static const struct clui_cmd nwif_conf_clui_iface_del_cmd = {
 	"\n" \
 	"Where:\n" \
 	"    [IFACE_SHOW_SPEC] -- optional show interface specification.\n" \
-	"    <IFACE_NEW_SPEC>  -- mandatory new interface specification.\n" \
+	"    <IFACE_NEW_SPEC>  -- mandatory interface creation specification.\n" \
+	"    <IFACE_SET_SPEC>  -- mandatory interface setup specification.\n" \
 	"    <IFACE_DEL_SPEC>  -- mandatory interface deletion specification.\n"
 
 static int
@@ -1158,7 +1464,6 @@ nwif_conf_clui_parse_iface(const struct clui_cmd *cmd,
 		                      &argv[1],
 		                      ctx);
 	}
-#if 0
 	else if (!strcmp(argv[0], "set")) {
 		return clui_parse_cmd(&nwif_conf_clui_iface_set_cmd,
 		                      parser,
@@ -1166,6 +1471,7 @@ nwif_conf_clui_parse_iface(const struct clui_cmd *cmd,
 		                      &argv[1],
 		                      ctx);
 	}
+#if 0
 	else if (!strcmp(argv[0], "clear")) {
 		return clui_parse_cmd(&nwif_conf_clui_iface_clear_cmd,
 		                      parser,
