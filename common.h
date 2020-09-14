@@ -78,7 +78,7 @@ struct nwif_iface_conf_data {
 
 struct nwif_iface_conf {
 	enum nwif_iface_conf_state  state;
-	struct kvs_autorec_id       id;
+	uint64_t                    id;
 	struct nwif_iface_conf_data data[0];
 };
 
@@ -122,15 +122,15 @@ nwif_iface_conf_set_attr(struct nwif_iface_conf *conf, enum nwif_attr_type attr)
 }
 
 extern int
-nwif_iface_conf_check_data(const struct kvs_autorec_desc *desc,
-                           enum nwif_iface_type           type,
-                           size_t                         size);
+nwif_iface_conf_check_data(const struct kvs_chunk *item,
+                           enum nwif_iface_type    type,
+                           size_t                  size);
 
 static inline void
 nwif_iface_conf_init(struct nwif_iface_conf *conf, enum nwif_iface_type type)
 {
 	conf->state = NWIF_IFACE_CONF_EMPTY_STATE;
-	conf->id = KVS_AUTOREC_NONE;
+	conf->id = 0;
 	conf->data[0].type = type;
 	conf->data[0].attr_mask = 0U;
 }
@@ -175,11 +175,11 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf,
                      struct nwif_conf_repo  *repo);
 
 extern int
-nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf,
-                               const struct kvs_autorec_desc *desc);
+nwif_ether_conf_load_from_data(struct nwif_iface_conf *conf,
+                               const struct kvs_chunk *item);
 
 extern struct nwif_iface_conf *
-nwif_ether_conf_create_from_desc(const struct kvs_autorec_desc *desc);
+nwif_ether_conf_create_from_rec(uint64_t id, const struct kvs_chunk *item);
 
 #else /* !defined(CONFIG_NWIF_ETHER) */
 
@@ -192,14 +192,15 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf __unused,
 }
 
 static inline int
-nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf __unused,
-                               const struct kvs_autorec_desc *desc __unused)
+nwif_ether_conf_load_from_data(struct nwif_iface_conf *conf __unused,
+                               const struct kvs_chunk *item __unused)
 {
 	return -ENOSYS;
 }
 
 static inline struct nwif_iface_conf *
-nwif_ether_conf_create_from_desc(const struct kvs_autorec_desc *desc __unused)
+nwif_ether_conf_create_from_rec(uint64_t                id __unused,
+                                const struct kvs_chunk *item __unused)
 {
 	errno = ENOSYS;
 	return NULL;

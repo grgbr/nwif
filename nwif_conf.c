@@ -32,7 +32,7 @@ struct nwif_conf_clui_ctx {
 	const char                     *path;
 	union {
 		const struct clui_cmd  *cmd;
-		struct kvs_autorec_id   iface_id;
+		uint64_t                iface_id;
 		const char             *iface_name;
 		struct nwif_iface_conf *iface_conf;
 	};
@@ -682,7 +682,8 @@ nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 
 	struct libscols_table   *tbl;
 	struct kvs_iter          iter;
-        struct kvs_autorec_desc  desc;
+	uint64_t                 id;
+        struct kvs_chunk         item;
 	int                      err;
 
 	err = nwif_iface_conf_init_iter(session->repo, &session->xact, &iter);
@@ -703,12 +704,12 @@ nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 		goto fini;
 	}
 
-	for (err = nwif_iface_conf_iter_first(&iter, &desc);
+	for (err = nwif_iface_conf_iter_first(&iter, &id, &item);
 	     !err;
-	     err = nwif_iface_conf_iter_next(&iter, &desc)) {
+	     err = nwif_iface_conf_iter_next(&iter, &id, &item)) {
 		struct nwif_iface_conf *iface;
 
-		iface = nwif_iface_conf_create_from_desc(&desc);
+		iface = nwif_iface_conf_create_from_rec(id, &item);
 		if (!iface) {
 			err = -errno;
 			break;
@@ -853,7 +854,7 @@ nwif_conf_clui_exec_show_iface_byname(const struct nwif_conf_clui_ctx *ctx,
 
 static int
 nwif_conf_clui_show_iface_byid(struct nwif_conf_clui_session *session,
-                               const struct kvs_autorec_id    id)
+                               uint64_t                       id)
 {
 	struct nwif_iface_conf *iface;
 	int                     ret;

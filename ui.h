@@ -25,14 +25,13 @@ struct nwif_iface_conf;
 extern const char *
 nwif_ui_get_iface_type_label(enum nwif_iface_type type);
 
-#define NWIF_CONF_ID_STRING_MAX (14U)
+#define NWIF_CONF_ID_STRING_MAX (13U)
 
 extern int
-nwif_ui_parse_conf_id(const char *arg, struct kvs_autorec_id *id);
+nwif_ui_parse_conf_id(const char *arg, uint64_t *id);
 
 extern void
-nwif_ui_sprintf_conf_id(char                  string[NWIF_CONF_ID_STRING_MAX],
-                        struct kvs_autorec_id id);
+nwif_ui_sprintf_conf_id(char string[NWIF_CONF_ID_STRING_MAX], uint64_t id);
 
 extern ssize_t
 nwif_ui_parse_iface_name(const char *arg);

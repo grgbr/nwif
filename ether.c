@@ -96,6 +96,7 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf,
 	nwif_assert(conf);
 
 	const struct nwif_ether_conf_data *data;
+	struct kvs_chunk                   item;
 	int                                err;
 
 	data = &((struct nwif_ether_conf *)conf)->data;
@@ -110,38 +111,41 @@ nwif_ether_conf_save(struct nwif_iface_conf *conf,
 	if (!nwif_iface_conf_has_attr(conf, NWIF_SYSPATH_ATTR))
 		return -ENODEV;
 
+	item.size = sizeof(*data);
+	item.data = data;
+
 	if (!kvs_autorec_id_isok(conf->id)) {
 		err = kvs_autorec_add(&repo->ifaces.data,
 		                      xact,
 		                      &conf->id,
-		                      data,
-		                      sizeof(*data));
+		                      &item);
 		kvs_assert(err || kvs_autorec_id_isok(conf->id));
 	}
 	else
 		err = kvs_autorec_update(&repo->ifaces.data,
 		                         xact,
 		                         conf->id,
-		                         data,
-		                         sizeof(*data));
+		                         &item);
 
 	return err;
 }
 
 int
-nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf,
-                               const struct kvs_autorec_desc *desc)
+nwif_ether_conf_load_from_data(struct nwif_iface_conf *conf,
+                               const struct kvs_chunk *item)
 {
+	nwif_assert(kvs_autorec_id_isok(conf->id));
+
 	const struct nwif_ether_conf_data *data;
 	int                                err;
 
-	err = nwif_iface_conf_check_data(desc,
+	err = nwif_iface_conf_check_data(item,
 	                                 NWIF_ETHER_IFACE_TYPE,
 	                                 sizeof(*data));
 	if (err)
 		return err;
 
-	data = (struct nwif_ether_conf_data *)desc->data;
+	data = (struct nwif_ether_conf_data *)item->data;
 
 	if (!nwif_iface_conf_data_has_attr(&data->iface, NWIF_SYSPATH_ATTR) ||
 	    (unet_check_iface_syspath(data->syspath) < 0))
@@ -153,14 +157,13 @@ nwif_ether_conf_load_from_desc(struct nwif_iface_conf        *conf,
 		return -EBADMSG;
 
 	conf->state = NWIF_IFACE_CONF_CLEAN_STATE;
-	conf->id = desc->id;
 	*(struct nwif_ether_conf_data *)conf->data = *data;
 
 	return 0;
 }
 
 struct nwif_iface_conf *
-nwif_ether_conf_create_from_desc(const struct kvs_autorec_desc *desc)
+nwif_ether_conf_create_from_rec(uint64_t id, const struct kvs_chunk *item)
 {
 	struct nwif_iface_conf *conf;
 	int                     err;
@@ -169,7 +172,8 @@ nwif_ether_conf_create_from_desc(const struct kvs_autorec_desc *desc)
 	if (!conf)
 		return NULL;
 
-	err = nwif_ether_conf_load_from_desc(conf, desc);
+	conf->id = id;
+	err = nwif_ether_conf_load_from_data(conf, item);
 	if (err)
 		goto free;
 

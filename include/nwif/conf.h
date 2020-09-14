@@ -7,7 +7,7 @@
 struct nwif_conf_repo;
 struct nwif_iface_conf;
 
-extern struct kvs_autorec_id
+extern uint64_t
 nwif_iface_conf_get_id(const struct nwif_iface_conf *conf);
 
 extern enum nwif_iface_type
@@ -46,7 +46,7 @@ nwif_iface_conf_reload(struct nwif_iface_conf *conf,
                        struct nwif_conf_repo  *repo);
 
 extern int
-nwif_iface_conf_del_byid(struct kvs_autorec_id        id,
+nwif_iface_conf_del_byid(uint64_t                     id,
                          const struct kvs_xact       *xact,
                          const struct nwif_conf_repo *repo);
 
@@ -57,10 +57,10 @@ nwif_iface_conf_del_byname(const char                  *name,
                            const struct nwif_conf_repo *repo);
 
 extern struct nwif_iface_conf *
-nwif_iface_conf_create_from_desc(const struct kvs_autorec_desc *desc);
+nwif_iface_conf_create_from_rec(uint64_t id, const struct kvs_chunk *item);
 
 extern struct nwif_iface_conf *
-nwif_iface_conf_create_byid(struct kvs_autorec_id        id,
+nwif_iface_conf_create_byid(uint64_t                     id,
                             const struct kvs_xact       *xact,
                             const struct nwif_conf_repo *repo);
 
@@ -75,11 +75,13 @@ nwif_iface_conf_destroy(struct nwif_iface_conf *conf);
 
 extern int
 nwif_iface_conf_iter_first(const struct kvs_iter   *iter,
-                           struct kvs_autorec_desc *desc);
+                           uint64_t                *id,
+                           struct kvs_chunk        *item);
 
 extern int
 nwif_iface_conf_iter_next(const struct kvs_iter   *iter,
-                          struct kvs_autorec_desc *desc);
+                          uint64_t                *id,
+                          struct kvs_chunk        *item);
 
 extern int
 nwif_iface_conf_init_iter(const struct nwif_conf_repo *repo,
