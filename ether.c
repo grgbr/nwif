@@ -40,6 +40,9 @@ struct nwif_ether_conf {
 	nwif_assert((_conf)->iface.state != NWIF_IFACE_CONF_FAIL_STATE); \
 	nwif_ether_conf_assert(_conf)
 
+#define nwif_ether_conf_assert_clear(_conf) \
+	nwif_ether_conf_assert_get(_conf)
+
 const char *
 nwif_ether_conf_get_syspath(const struct nwif_ether_conf *conf)
 {
@@ -58,6 +61,10 @@ nwif_ether_conf_set_syspath(struct nwif_ether_conf *conf,
 {
 	nwif_ether_conf_assert_set(conf);
 	nwif_assert(unet_check_iface_syspath(syspath) == (ssize_t)len);
+
+	if (nwif_iface_conf_has_attr(&conf->iface, NWIF_SYSPATH_ATTR) &&
+	    !strncmp(conf->data.syspath, syspath, sizeof(conf->data.syspath)))
+		return;
 
 	memcpy(conf->data.syspath, syspath, len);
 	conf->data.syspath[len] = '\0';
@@ -83,9 +90,21 @@ nwif_ether_conf_set_hwaddr(struct nwif_ether_conf  *conf,
 	nwif_ether_conf_assert_set(conf);
 	nwif_assert(unet_hwaddr_is_laa(hwaddr) && unet_hwaddr_is_ucast(hwaddr));
 
+	if (nwif_iface_conf_has_attr(&conf->iface, NWIF_HWADDR_ATTR) &&
+	    !memcmp(&conf->data.hwaddr, hwaddr, sizeof(*hwaddr)))
+		return;
+
 	conf->data.hwaddr = *hwaddr;
 
 	nwif_iface_conf_set_attr(&conf->iface, NWIF_HWADDR_ATTR);
+}
+
+void
+nwif_ether_conf_clear_hwaddr(struct nwif_ether_conf *conf)
+{
+	nwif_ether_conf_assert_clear(conf);
+
+	nwif_iface_conf_clear_attr(&conf->iface, NWIF_HWADDR_ATTR);
 }
 
 int

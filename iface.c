@@ -95,6 +95,9 @@ free:
 	nwif_assert((_conf)->state != NWIF_IFACE_CONF_FAIL_STATE); \
 	nwif_iface_conf_assert_data((_conf)->data)
 
+#define nwif_iface_conf_assert_clear(_conf) \
+	nwif_iface_conf_assert_get(_conf)
+
 uint64_t
 nwif_iface_conf_get_id(const struct nwif_iface_conf *conf)
 {
@@ -130,10 +133,22 @@ nwif_iface_conf_set_name(struct nwif_iface_conf *conf,
 	nwif_iface_conf_assert_set(conf);
 	nwif_assert(unet_check_iface_name(name) == (ssize_t)len);
 
+	if (nwif_iface_conf_has_attr(conf, NWIF_NAME_ATTR) &&
+	    !strncmp(conf->data[0].name, name, sizeof(conf->data[0].name)))
+		return;
+
 	memcpy(conf->data[0].name, name, len);
 	conf->data[0].name[len] = '\0';
 
 	nwif_iface_conf_set_attr(conf, NWIF_NAME_ATTR);
+}
+
+void
+nwif_iface_conf_clear_name(struct nwif_iface_conf *conf)
+{
+	nwif_iface_conf_assert_clear(conf);
+
+	nwif_iface_conf_clear_attr(conf, NWIF_NAME_ATTR);
 }
 
 void
@@ -155,9 +170,21 @@ nwif_iface_conf_set_oper_state(struct nwif_iface_conf *conf, uint8_t oper_state)
 	nwif_iface_conf_assert_set(conf);
 	nwif_assert(nwif_iface_oper_state_isok(oper_state));
 
+	if (nwif_iface_conf_has_attr(conf, NWIF_OPER_STATE_ATTR) &&
+	    (conf->data[0].oper_state == oper_state))
+		return;
+
 	conf->data[0].oper_state = oper_state;
 
 	nwif_iface_conf_set_attr(conf, NWIF_OPER_STATE_ATTR);
+}
+
+void
+nwif_iface_conf_clear_oper_state(struct nwif_iface_conf *conf)
+{
+	nwif_iface_conf_assert_clear(conf);
+
+	nwif_iface_conf_clear_attr(conf, NWIF_OPER_STATE_ATTR);
 }
 
 int
@@ -180,9 +207,21 @@ nwif_iface_conf_set_mtu(struct nwif_iface_conf *conf, uint32_t mtu)
 	nwif_iface_conf_assert_set(conf);
 	nwif_assert(unet_mtu_isok(mtu));
 
+	if (nwif_iface_conf_has_attr(conf, NWIF_MTU_ATTR) &&
+	    (conf->data[0].mtu == mtu))
+		return;
+
 	conf->data[0].mtu = mtu;
 
 	nwif_iface_conf_set_attr(conf, NWIF_MTU_ATTR);
+}
+
+void
+nwif_iface_conf_clear_mtu(struct nwif_iface_conf *conf)
+{
+	nwif_iface_conf_assert_clear(conf);
+
+	nwif_iface_conf_clear_attr(conf, NWIF_MTU_ATTR);
 }
 
 int

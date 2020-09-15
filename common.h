@@ -112,6 +112,20 @@ nwif_iface_conf_set_attr(struct nwif_iface_conf *conf, enum nwif_attr_type attr)
 	conf->state = NWIF_IFACE_CONF_DIRTY_STATE;
 }
 
+static inline void
+nwif_iface_conf_clear_attr(struct nwif_iface_conf *conf,
+                           enum nwif_attr_type     attr)
+{
+	nwif_assert(conf);
+	nwif_assert(attr);
+	nwif_assert(attr < NWIF_ATTR_NR);
+
+	if (nwif_iface_conf_has_attr(conf, attr)) {
+		conf->data[0].attr_mask &= ~attr;
+		conf->state = NWIF_IFACE_CONF_DIRTY_STATE;
+	}
+}
+
 extern int
 nwif_iface_conf_check_data(const struct kvs_chunk *item,
                            enum nwif_iface_type    type,

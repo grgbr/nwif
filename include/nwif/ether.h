@@ -34,6 +34,9 @@ extern void
 nwif_ether_conf_set_hwaddr(struct nwif_ether_conf  *conf,
                            const struct ether_addr *hwaddr);
 
+extern void
+nwif_ether_conf_clear_hwaddr(struct nwif_ether_conf *conf);
+
 extern struct nwif_ether_conf *
 nwif_ether_conf_create(void);
 

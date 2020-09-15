@@ -22,6 +22,9 @@ nwif_iface_conf_set_name(struct nwif_iface_conf *conf,
                          size_t                  len);
 
 extern void
+nwif_iface_conf_clear_name(struct nwif_iface_conf *conf);
+
+extern void
 nwif_iface_conf_get_oper_state(const struct nwif_iface_conf *conf,
                                uint8_t                      *oper_state);
 
@@ -29,11 +32,17 @@ extern void
 nwif_iface_conf_set_oper_state(struct nwif_iface_conf *conf,
                                uint8_t                 oper_state);
 
+extern void
+nwif_iface_conf_clear_oper_state(struct nwif_iface_conf *conf);
+
 extern int
 nwif_iface_conf_get_mtu(const struct nwif_iface_conf *conf, uint32_t *mtu);
 
 extern void
 nwif_iface_conf_set_mtu(struct nwif_iface_conf *conf, uint32_t mtu);
+
+extern void
+nwif_iface_conf_clear_mtu(struct nwif_iface_conf *conf);
 
 extern int
 nwif_iface_conf_save(struct nwif_iface_conf *conf,
