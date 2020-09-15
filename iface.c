@@ -483,7 +483,7 @@ nwif_iface_conf_destroy(struct nwif_iface_conf *conf)
 }
 
 static int
-nwif_iface_conf_bind_name_idx(const struct kvs_chunk *pkey,
+nwif_iface_conf_bind_name_idx(const struct kvs_chunk *pkey __unused,
                               const struct kvs_chunk *item,
                               struct kvs_chunk       *skey)
 {
@@ -514,6 +514,72 @@ nwif_iface_conf_bind_name_idx(const struct kvs_chunk *pkey,
 	return 0;
 }
 
+static int
+nwif_iface_conf_bind_syspath_idx(const struct kvs_chunk *pkey __unused,
+                                 const struct kvs_chunk *item,
+                                 struct kvs_chunk       *skey)
+{
+	nwif_assert(pkey->size);
+	nwif_assert(pkey->data);
+	nwif_assert(item->size);
+	nwif_assert(item->data);
+	nwif_assert(skey);
+
+	struct nwif_iface_conf_data *data;
+
+	if (item->size <= sizeof(*data))
+		return -EMSGSIZE;
+
+	data = (struct nwif_iface_conf_data *)item->data;
+	nwif_iface_conf_assert_data(data);
+
+	if (!nwif_iface_conf_data_has_attr(data, NWIF_SYSPATH_ATTR)) {
+		skey->size = 0;
+		return 0;
+	}
+
+	switch (data->type) {
+	case NWIF_ETHER_IFACE_TYPE:
+		return nwif_ether_conf_bind_syspath_idx(item, skey);
+
+	default:
+		return -ENOTSUP;
+	}
+}
+
+static int
+nwif_iface_conf_bind_hwaddr_idx(const struct kvs_chunk *pkey,
+                                const struct kvs_chunk *item,
+                                struct kvs_chunk       *skey)
+{
+	nwif_assert(pkey->size);
+	nwif_assert(pkey->data);
+	nwif_assert(item->size);
+	nwif_assert(item->data);
+	nwif_assert(skey);
+
+	struct nwif_iface_conf_data *data;
+
+	if (item->size <= sizeof(*data))
+		return -EMSGSIZE;
+
+	data = (struct nwif_iface_conf_data *)item->data;
+	nwif_iface_conf_assert_data(data);
+
+	if (!nwif_iface_conf_data_has_attr(data, NWIF_HWADDR_ATTR)) {
+		skey->size = 0;
+		return 0;
+	}
+
+	switch (data->type) {
+	case NWIF_ETHER_IFACE_TYPE:
+		return nwif_ether_conf_bind_hwaddr_idx(item, skey);
+
+	default:
+		return -ENOTSUP;
+	}
+}
+
 int
 nwif_iface_conf_open_table(struct nwif_iface_conf_table *table,
                            const struct kvs_depot       *depot,
@@ -537,33 +603,31 @@ nwif_iface_conf_open_table(struct nwif_iface_conf_table *table,
 	                     NWIF_IFACE_CONF_BASENAME ".idx",
 	                     "names",
 	                     S_IRUSR | S_IWUSR,
-	                     &nwif_iface_conf_bind_name_idx);
+	                     nwif_iface_conf_bind_name_idx);
 	if (err)
 		return err;
 
-#if 0
-	err = kvs_open_index(&table->syspaths,
+	err = kvs_open_index(&table->idx[table->open_cnt++],
 	                     &table->data,
 	                     depot,
-	                     &xact,
+	                     xact,
 	                     NWIF_IFACE_CONF_BASENAME ".idx",
 	                     "syspaths",
 	                     S_IRUSR | S_IWUSR,
-	                     &nwif_iface_conf_bind_sypath_idx);
+	                     nwif_iface_conf_bind_syspath_idx);
 	if (err)
 		return err;
 
-	err = kvs_open_index(&table->hwaddrs,
+	err = kvs_open_index(&table->idx[table->open_cnt++],
 	                     &table->data,
 	                     depot,
-	                     &xact,
+	                     xact,
 	                     NWIF_IFACE_CONF_BASENAME ".idx",
 	                     "hwaddrs",
 	                     S_IRUSR | S_IWUSR,
-	                     &nwif_iface_conf_bind_hwaddr_idx);
+	                     nwif_iface_conf_bind_hwaddr_idx);
 	if (err)
 		return err;
-#endif
 
 	return 0;
 }

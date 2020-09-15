@@ -142,10 +142,8 @@ nwif_iface_conf_init(struct nwif_iface_conf *conf, enum nwif_iface_type type)
 
 enum nwif_iface_conf_store_id {
 	NWIF_IFACE_CONF_NAMES_SID    = 0,
-#if 0
 	NWIF_IFACE_CONF_SYSPATHS_SID = 1,
 	NWIF_IFACE_CONF_HWADDRS_SID  = 2,
-#endif
 	NWIF_IFACE_CONF_SID_NR
 };
 
@@ -185,6 +183,14 @@ nwif_ether_conf_load_from_data(struct nwif_iface_conf *conf,
 
 extern struct nwif_iface_conf *
 nwif_ether_conf_create_from_rec(uint64_t id, const struct kvs_chunk *item);
+
+extern int
+nwif_ether_conf_bind_syspath_idx(const struct kvs_chunk *item,
+                                 struct kvs_chunk       *skey);
+
+extern int
+nwif_ether_conf_bind_hwaddr_idx(const struct kvs_chunk *item,
+                                struct kvs_chunk       *skey);
 
 #else /* !defined(CONFIG_NWIF_ETHER) */
 
