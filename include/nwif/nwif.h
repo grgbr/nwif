@@ -6,7 +6,7 @@
 
 enum nwif_iface_type {
 	NWIF_ETHER_IFACE_TYPE,
-	NWIF_TYPE_NR
+	NWIF_IFACE_TYPE_NR
 };
 
 enum nwif_attr_type {

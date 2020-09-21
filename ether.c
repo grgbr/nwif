@@ -1,52 +1,26 @@
-#include <nwif/ether.h>
-#include "common.h"
-#include <nwif/conf.h>
-#include <nlink/iface.h>
-#include <utils/net.h>
+#include "ether_priv.h"
 #include <string.h>
-#include <errno.h>
-#include <net/if_arp.h>
-#include <net/ethernet.h>
 
-struct nwif_ether_conf_data {
-	struct nwif_iface_conf_data iface;
-	char                        syspath[UNET_IFACE_SYSPATH_MAX];
-	struct ether_addr           hwaddr;
-};
-
-struct nwif_ether_conf {
-	struct nwif_iface_conf      iface;
-	struct nwif_ether_conf_data data;
-};
+#define nwif_ether_conf_assert_data(_data) \
+	nwif_assert((_data)->iface.type == NWIF_ETHER_IFACE_TYPE); \
+	nwif_assert(!nwif_iface_conf_data_has_attr(&(_data)->iface, \
+	                                           NWIF_SYSPATH_ATTR) || \
+	            (unet_check_iface_syspath((_data)->syspath) > 0)); \
+	nwif_assert(!nwif_iface_conf_data_has_attr(&(_data)->iface, \
+	                                           NWIF_HWADDR_ATTR) || \
+	            unet_hwaddr_is_laa(&(_data)->hwaddr)); \
+	nwif_assert(!nwif_iface_conf_data_has_attr(&(_data)->iface, \
+	                                           NWIF_HWADDR_ATTR) || \
+	            unet_hwaddr_is_ucast(&(_data)->hwaddr))
 
 #define nwif_ether_conf_assert(_conf) \
-	nwif_assert((_conf)->data.iface.type == NWIF_ETHER_IFACE_TYPE); \
-	nwif_assert(!nwif_iface_conf_has_attr(&(_conf)->iface, \
-	                                      NWIF_SYSPATH_ATTR) || \
-	            (unet_check_iface_syspath((_conf)->data.syspath) > 0)); \
-	nwif_assert(!nwif_iface_conf_has_attr(&(_conf)->iface, \
-	                                      NWIF_HWADDR_ATTR) || \
-	            unet_hwaddr_is_laa(&(_conf)->data.hwaddr)); \
-	nwif_assert(!nwif_iface_conf_has_attr(&(_conf)->iface, \
-	                                      NWIF_HWADDR_ATTR) || \
-	            unet_hwaddr_is_ucast(&(_conf)->data.hwaddr))
-
-#define nwif_ether_conf_assert_get(_conf) \
-	nwif_assert((_conf)->iface.state != NWIF_IFACE_CONF_EMPTY_STATE); \
-	nwif_assert((_conf)->iface.state != NWIF_IFACE_CONF_FAIL_STATE); \
-	nwif_ether_conf_assert(_conf)
-
-#define nwif_ether_conf_assert_set(_conf) \
-	nwif_assert((_conf)->iface.state != NWIF_IFACE_CONF_FAIL_STATE); \
-	nwif_ether_conf_assert(_conf)
-
-#define nwif_ether_conf_assert_clear(_conf) \
-	nwif_ether_conf_assert_get(_conf)
+	nwif_ether_conf_assert_data(&(_conf)->data)
 
 const char *
 nwif_ether_conf_get_syspath(const struct nwif_ether_conf *conf)
 {
-	nwif_ether_conf_assert_get(conf);
+	nwif_ether_conf_assert(conf);
+	nwif_assert(conf->iface.state != NWIF_IFACE_CONF_EMPTY_STATE);
 
 	if (!nwif_iface_conf_has_attr(&conf->iface, NWIF_SYSPATH_ATTR))
 		return NULL;
@@ -59,7 +33,7 @@ nwif_ether_conf_set_syspath(struct nwif_ether_conf *conf,
                             const char             *syspath,
                             size_t                  len)
 {
-	nwif_ether_conf_assert_set(conf);
+	nwif_ether_conf_assert(conf);
 	nwif_assert(unet_check_iface_syspath(syspath) == (ssize_t)len);
 
 	if (nwif_iface_conf_has_attr(&conf->iface, NWIF_SYSPATH_ATTR) &&
@@ -75,7 +49,8 @@ nwif_ether_conf_set_syspath(struct nwif_ether_conf *conf,
 const struct ether_addr *
 nwif_ether_conf_get_hwaddr(const struct nwif_ether_conf *conf)
 {
-	nwif_ether_conf_assert_get(conf);
+	nwif_ether_conf_assert(conf);
+	nwif_assert(conf->iface.state != NWIF_IFACE_CONF_EMPTY_STATE);
 
 	if (!nwif_iface_conf_has_attr(&conf->iface, NWIF_HWADDR_ATTR))
 		return NULL;
@@ -87,7 +62,7 @@ void
 nwif_ether_conf_set_hwaddr(struct nwif_ether_conf  *conf,
                            const struct ether_addr *hwaddr)
 {
-	nwif_ether_conf_assert_set(conf);
+	nwif_ether_conf_assert(conf);
 	nwif_assert(unet_hwaddr_is_laa(hwaddr) && unet_hwaddr_is_ucast(hwaddr));
 
 	if (nwif_iface_conf_has_attr(&conf->iface, NWIF_HWADDR_ATTR) &&
@@ -102,138 +77,69 @@ nwif_ether_conf_set_hwaddr(struct nwif_ether_conf  *conf,
 void
 nwif_ether_conf_clear_hwaddr(struct nwif_ether_conf *conf)
 {
-	nwif_ether_conf_assert_clear(conf);
+	nwif_ether_conf_assert(conf);
+	nwif_assert(conf->iface.state != NWIF_IFACE_CONF_EMPTY_STATE);
 
 	nwif_iface_conf_clear_attr(&conf->iface, NWIF_HWADDR_ATTR);
 }
 
-int
-nwif_ether_conf_save(struct nwif_iface_conf *conf,
-                     const struct kvs_xact  *xact,
-                     struct nwif_conf_repo  *repo)
+static int
+nwif_ether_conf_bind_syspath_indx(const struct kvs_chunk *item,
+                                  struct kvs_chunk       *skey)
 {
-	nwif_assert(conf);
-
-	const struct nwif_ether_conf_data *data;
-	struct kvs_chunk                   item;
-	int                                err;
-
-	data = &((struct nwif_ether_conf *)conf)->data;
-
-	nwif_assert(!nwif_iface_conf_has_attr(conf, NWIF_SYSPATH_ATTR) ||
-	            unet_check_iface_syspath(data->syspath) > 0);
-	nwif_assert(!nwif_iface_conf_has_attr(conf, NWIF_HWADDR_ATTR) ||
-	            unet_hwaddr_is_laa(&data->hwaddr));
-	nwif_assert(!nwif_iface_conf_has_attr(conf, NWIF_HWADDR_ATTR) ||
-	            unet_hwaddr_is_ucast(&data->hwaddr));
-
-	if (!nwif_iface_conf_has_attr(conf, NWIF_SYSPATH_ATTR))
-		return -ENODEV;
-
-	item.size = sizeof(*data);
-	item.data = data;
-
-	if (!kvs_autorec_id_isok(conf->id)) {
-		err = kvs_autorec_add(&repo->ifaces.data,
-		                      xact,
-		                      &conf->id,
-		                      &item);
-		kvs_assert(err || kvs_autorec_id_isok(conf->id));
-	}
-	else
-		err = kvs_autorec_update(&repo->ifaces.data,
-		                         xact,
-		                         conf->id,
-		                         &item);
-
-	return err;
-}
-
-#define nwif_ether_conf_assert_data(_data) \
-	nwif_assert(nwif_iface_conf_data_has_attr(&(_data)->iface, \
-	                                          NWIF_SYSPATH_ATTR) && \
-	            (unet_check_iface_syspath((_data)->syspath) > 0)); \
-	nwif_assert(!nwif_iface_conf_data_has_attr(&(_data)->iface, \
-	                                           NWIF_HWADDR_ATTR) || \
-	            (unet_hwaddr_is_laa(&(_data)->hwaddr) && \
-	             unet_hwaddr_is_ucast(&(_data)->hwaddr)))
-
-#define nwif_ether_conf_assert_item(_item) \
-	nwif_assert( \
-		!nwif_iface_conf_check_data( \
-			_item, \
-			NWIF_ETHER_IFACE_TYPE, \
-			sizeof(struct nwif_ether_conf_data))); \
-	nwif_ether_conf_assert_data((struct nwif_ether_conf_data *) \
-	                            (_item)->data)
-
-int
-nwif_ether_conf_load_from_data(struct nwif_iface_conf *conf,
-                               const struct kvs_chunk *item)
-{
-	nwif_assert(kvs_autorec_id_isok(conf->id));
-	nwif_ether_conf_assert_item(item);
-
-	conf->state = NWIF_IFACE_CONF_CLEAN_STATE;
-
-	*(struct nwif_ether_conf_data *)conf->data =
-		*(struct nwif_ether_conf_data *)item->data;
-
-	return 0;
-}
-
-struct nwif_iface_conf *
-nwif_ether_conf_create_from_rec(uint64_t id, const struct kvs_chunk *item)
-{
-	struct nwif_iface_conf *conf;
-	int                     err;
-
-	conf = malloc(sizeof(struct nwif_ether_conf));
-	if (!conf)
-		return NULL;
-
-	conf->id = id;
-	nwif_ether_conf_load_from_data(conf, item);
-
-	return conf;
-}
-
-int
-nwif_ether_conf_bind_syspath_idx(const struct kvs_chunk *item,
-                                 struct kvs_chunk       *skey)
-{
-	nwif_ether_conf_assert_item(item);
-
 	const struct nwif_ether_conf_data *data =
 		(struct nwif_ether_conf_data *)item->data;
 
+	nwif_assert(item->size == sizeof(*data));
+	nwif_ether_conf_assert_data(data);
+	nwif_assert(nwif_iface_conf_data_has_attr(&data->iface,
+	                                          NWIF_SYSPATH_ATTR));
+	
 	skey->data = data->syspath;
 	skey->size = strlen(data->syspath);
 
 	return 0;
 }
 
-int
-nwif_ether_conf_bind_hwaddr_idx(const struct kvs_chunk *item,
-                                struct kvs_chunk       *skey)
+static int
+nwif_ether_conf_bind_hwaddr_indx(const struct kvs_chunk *item,
+                                 struct kvs_chunk       *skey)
 {
-	nwif_ether_conf_assert_item(item);
-
 	const struct nwif_ether_conf_data *data =
 		(struct nwif_ether_conf_data *)item->data;
 
-	if (nwif_iface_conf_data_has_attr(&data->iface, NWIF_HWADDR_ATTR)) {
-		skey->data = &data->hwaddr;
-		skey->size = sizeof(data->hwaddr);
-	}
-	else
-		skey->size = 0;
+	nwif_assert(item->size == sizeof(*data));
+	nwif_ether_conf_assert_data(data);
+	nwif_assert(nwif_iface_conf_data_has_attr(&data->iface,
+	                                          NWIF_HWADDR_ATTR));
+
+	skey->data = &data->hwaddr;
+	skey->size = sizeof(data->hwaddr);
 
 	return 0;
 }
 
+static int
+nwif_ether_conf_check_data(uint64_t                           id __unused,
+                           const struct nwif_iface_conf_data *data)
+{
+	nwif_ether_conf_assert_data((struct nwif_ether_conf_data *)data);
+
+	if (!nwif_iface_conf_data_has_attr(data, NWIF_SYSPATH_ATTR))
+		return -ENODEV;
+
+	return 0;
+}
+
+const struct nwif_iface_conf_impl nwif_ether_conf_impl = {
+	.data_size    = sizeof(struct nwif_ether_conf_data),
+	.bind_syspath = nwif_ether_conf_bind_syspath_indx,
+	.bind_hwaddr  = nwif_ether_conf_bind_hwaddr_indx,
+	.check_data   = nwif_ether_conf_check_data
+};
+
 struct nwif_ether_conf *
-nwif_ether_conf_create(void)
+nwif_ether_conf_create(const struct kvs_table *table)
 {
 	struct nwif_ether_conf *conf;
 
@@ -241,7 +147,7 @@ nwif_ether_conf_create(void)
 	if (!conf)
 		return NULL;
 
-	nwif_iface_conf_init(&conf->iface, NWIF_ETHER_IFACE_TYPE);
+	nwif_iface_conf_init(&conf->iface, NWIF_ETHER_IFACE_TYPE, table);
 
 	return conf;
 }

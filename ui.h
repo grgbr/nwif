@@ -1,10 +1,9 @@
 #ifndef _NWIF_UI_H
 #define _NWIF_UI_H
 
-#include <nwif/nwif.h>
-#include <sys/types.h>
-#include <kvstore/autorec.h>
+#include "common.h"
 #include <libsmartcols/libsmartcols.h>
+#include <sys/types.h>
 
 #if defined(CONFIG_NWIF_ASSERT)
 

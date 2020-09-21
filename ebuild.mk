@@ -6,15 +6,14 @@ common-cflags      := -Wall -Wextra \
                       -DCONFIG_NWIF_LOCALSTATEDIR="\"$(LOCALSTATEDIR)/lib/nwif\""
 
 solibs             := libnwif.so
-libnwif.so-objs     = iface.o conf.o
+libnwif.so-objs     = conf.o iface.o
 libnwif.so-objs    += $(call kconf_enabled,NWIF_ETHER,ether.o)
 libnwif.so-cflags   = $(EXTRA_CFLAGS) $(common-cflags) -DPIC -fpic
 libnwif.so-ldflags  = $(EXTRA_LDFLAGS) -shared -fpic -Wl,-soname,libnwif.so
 libnwif.so-pkgconf  = libnlink libkvstore
 
 HEADERDIR          := $(CURDIR)/include
-headers             = nwif/nwif.h nwif/conf.h
-headers            += $(call kconf_enabled,NWIF_ETHER,nwif/ether.h)
+headers             = nwif/nwif.h
 
 define libnwif_pkgconf_tmpl
 prefix=$(PREFIX)

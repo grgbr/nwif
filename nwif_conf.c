@@ -1,11 +1,11 @@
-#include "nwif/config.h"
+#include "common.h"
 #include "ui.h"
-#include <nwif/conf.h>
-#include <utils/net.h>
+#include "conf_priv.h"
+#include "iface_priv.h"
 #include <utils/path.h>
 #include <clui/clui.h>
-#include <stdlib.h>
 #include <string.h>
+
 #include <sys/stat.h>
 
 #define NWIF_CONF_DIR_PATH CONFIG_NWIF_LOCALSTATEDIR
@@ -85,7 +85,7 @@ nwif_conf_clui_sched_help(void *ctx, const struct clui_cmd *cmd)
 struct nwif_conf_clui_session {
 	int                       err;
 	struct kvs_xact           xact;
-	struct nwif_conf_repo    *repo;
+	struct kvs_repo          *repo;
 	const struct clui_parser *parser;
 };
 
@@ -95,16 +95,52 @@ struct nwif_conf_clui_session {
 	nwif_ui_assert((_sess)->parser)
 
 static int
-nwif_conf_begin_clui_session(struct nwif_conf_clui_session *session,
-                             const char                    *path,
-                             const struct clui_parser      *parser)
+nwif_conf_clui_begin_session(struct nwif_conf_clui_session *session)
+{
+	nwif_ui_assert_session(session);
+
+	session->err = nwif_conf_begin_xact(session->repo,
+	                                    NULL,
+	                                    &session->xact,
+	                                    0);
+	if (session->err)
+		nwif_conf_clui_err(session->parser,
+		                   session->err,
+		                   "failed to begin configuration transaction");
+
+	return session->err;
+}
+
+static int
+nwif_conf_clui_end_session(struct nwif_conf_clui_session *session)
+{
+	nwif_ui_assert_session(session);
+
+	int err = session->err;
+
+	session->err = kvs_end_xact(&session->xact, err);
+
+#warning Yack !! Rework me !!
+	if (!err && session->err)
+		nwif_conf_clui_err(session->parser,
+		                   session->err,
+		                   "failed to end configuration transaction");
+
+	return session->err;
+}
+
+static int
+nwif_conf_clui_open_session(struct nwif_conf_clui_session *session,
+                            const char                    *path,
+                            const struct clui_parser      *parser)
 {
 	nwif_ui_assert(session);
 	nwif_ui_assert(upath_validate_path_name(path) > 0);
 	nwif_ui_assert(parser);
+
 	int err;
 
-	session->repo = nwif_conf_alloc();
+	session->repo = nwif_conf_create();
 	if (!session->repo)
 		return -errno;
 
@@ -117,22 +153,9 @@ nwif_conf_begin_clui_session(struct nwif_conf_clui_session *session,
 		goto free;
 	}
 
-	err = nwif_conf_begin_xact(session->repo, NULL, &session->xact, 0);
-	if (err) {
-		nwif_conf_clui_err(parser,
-		                   err,
-		                   "failed to start configuration transaction");
-		goto close;
-	}
-
-	session->err = 0;
 	session->parser = parser;
 
 	return 0;
-
-close:
-	if (err != -ENOTRECOVERABLE)
-		nwif_conf_close(session->repo);
 
 free:
 	free(session->repo);
@@ -141,42 +164,27 @@ free:
 }
 
 static int
-nwif_conf_close_clui_session(const struct nwif_conf_clui_session *session)
+nwif_conf_clui_close_session(const struct nwif_conf_clui_session *session)
 {
 	nwif_ui_assert_session(session);
 
 	int err = session->err;
 
-	if (!err) {
-		err = nwif_conf_commit_xact(&session->xact);
-		if (err) {
-			nwif_conf_clui_err(
-				session->parser,
-				err,
-				"failed to commit configuration transaction");
+	if (err == -ENOTRECOVERABLE)
+		goto free;
 
-			if (err != -ENOTRECOVERABLE)
-				nwif_conf_close(session->repo);
-
-			goto free;
-		}
-
+	if (err) {
+		if (nwif_conf_close(session->repo) == -ENOTRECOVERABLE)
+			err = -ENOTRECOVERABLE;
+	}
+	else
 		err = nwif_conf_close(session->repo);
-		if (err)
-			nwif_conf_clui_err(
-				session->parser,
-				err,
-				"failed to close configuration");
-	}
-	else {
-		if (err == -ENOTRECOVERABLE)
-			goto free;
 
-		if (nwif_conf_rollback_xact(&session->xact) == -ENOTRECOVERABLE)
-			goto free;
-
-		nwif_conf_close(session->repo);
-	}
+#warning Yack !! Rework me !!
+	if (!session->err && err)
+		nwif_conf_clui_err(session->parser,
+		                   err,
+		                   "failed to close configuration repository");
 
 free:
 	free(session->repo);
@@ -520,7 +528,7 @@ static const struct clui_switch_parm nwif_conf_clui_iface_hwaddr_switch_parm = {
 
 #if defined(CONFIG_NWIF_ETHER)
 
-#include <nwif/ether.h>
+#include "ether_priv.h"
 
 #define NWIF_CONF_CLUI_IFACE_NEW_ETHER_SYNOPSIS \
 	"    %1$s iface new ether <ETHER_NEW_SPEC> | help\n" \
@@ -655,40 +663,44 @@ nwif_conf_clui_exec_new_ether(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_conf_clui_session  sess;
 	int                            ret;
 
-	conf = nwif_ether_conf_create();
-	if (!conf) {
-		ret = -errno;
-		nwif_conf_clui_err(
-			parser,
-			ret,
-			"failed to allocate interface");
+	ret = nwif_conf_clui_open_session(&sess, ctx->path, parser);
+	if (ret)
 		goto free;
+
+	conf = nwif_ether_conf_create(nwif_conf_get_iface_table(sess.repo));
+	if (!conf) {
+		sess.err = -errno;
+		nwif_conf_clui_err(parser,
+		                   sess.err,
+		                   "failed to allocate interface");
+		goto close;
 	}
 
-	ret = nwif_conf_clui_fill_ether(conf, &ctx->iface_attrs);
-	if (ret) {
+	sess.err = nwif_conf_clui_fill_ether(conf, &ctx->iface_attrs);
+	if (sess.err) {
 		clui_err(parser,
 		         "failed to create ethernet interface: "
 		         "unexpected attribute(s).");
 		goto destroy;
 	}
 
-	ret = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
-	if (ret)
+	if (nwif_conf_clui_begin_session(&sess))
 		goto destroy;
 
 	sess.err = nwif_iface_conf_save(nwif_ether_conf_to_iface(conf),
-	                                &sess.xact,
-	                                sess.repo);
+	                                &sess.xact);
 	if (sess.err)
 		nwif_conf_clui_err(parser,
 		                   sess.err,
 		                   "failed to create ethernet interface");
 
-	ret = nwif_conf_close_clui_session(&sess);
+	nwif_conf_clui_end_session(&sess);
 
 destroy:
 	nwif_iface_conf_destroy(nwif_ether_conf_to_iface(conf));
+
+close:
+	ret = nwif_conf_clui_close_session(&sess);
 
 free:
 	free(ctx->iface_attrs.syspath);
@@ -884,26 +896,31 @@ nwif_conf_clui_exec_set_iface_byid(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_iface_conf             *conf;
 	int                                 ret;
 
-	ret = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	ret = nwif_conf_clui_open_session(&sess, ctx->path, parser);
 	if (ret)
 		goto free;
 
-	conf = nwif_iface_conf_create_byid(ctx->iface_id, &sess.xact, sess.repo);
+	if (nwif_conf_clui_begin_session(&sess))
+		goto close;
+
+	conf = nwif_iface_conf_create_byid(nwif_conf_get_iface_table(sess.repo),
+	                                   &sess.xact,
+	                                   ctx->iface_id);
 	if (!conf) {
-		ret = -errno;
+		sess.err = -errno;
 		nwif_conf_clui_err(parser,
-		                   ret,
+		                   sess.err,
 		                   "failed to load '%" PRIx64 "' interface",
 		                   ctx->iface_id);
-		goto close;
+		goto end;
 	}
 
 	switch (nwif_iface_conf_get_type(conf)) {
 #if defined(CONFIG_NWIF_ETHER)
 	case NWIF_ETHER_IFACE_TYPE:
-		ret = nwif_conf_clui_fill_ether(
+		sess.err = nwif_conf_clui_fill_ether(
 			nwif_ether_conf_from_iface(conf), attrs);
-		if (ret) {
+		if (sess.err) {
 			clui_err(parser,
 			         "failed to setup '%" PRIx64 "' ethernet "
 			         "interface: unexpected attribute(s).",
@@ -916,22 +933,24 @@ nwif_conf_clui_exec_set_iface_byid(const struct nwif_conf_clui_ctx *ctx,
 		nwif_ui_assert(0);
 	}
 
-	if (ret)
+	if (sess.err)
 		goto destroy;
 
-	ret = nwif_iface_conf_save(conf, &sess.xact, sess.repo);
-	if (ret)
+	sess.err = nwif_iface_conf_save(conf, &sess.xact);
+	if (sess.err)
 		nwif_conf_clui_err(parser,
-		                   ret,
+		                   sess.err,
 		                   "failed to save '%" PRIx64 "' interface",
 		                   ctx->iface_id);
 
 destroy:
 	nwif_iface_conf_destroy(conf);
 
+end:
+	nwif_conf_clui_end_session(&sess);
+
 close:
-	sess.err = ret;
-	ret = nwif_conf_close_clui_session(&sess);
+	ret = nwif_conf_clui_close_session(&sess);
 
 free:
 	if (attrs->mask & NWIF_SYSPATH_ATTR)
@@ -951,29 +970,33 @@ nwif_conf_clui_exec_set_iface_byname(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_iface_conf             *conf;
 	int                                 ret;
 
-	ret = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	ret = nwif_conf_clui_open_session(&sess, ctx->path, parser);
 	if (ret)
 		goto free;
 
-	conf = nwif_iface_conf_create_byname(ctx->iface_name,
-	                                     strlen(ctx->iface_name),
-	                                     &sess.xact,
-	                                     sess.repo);
+	if (nwif_conf_clui_begin_session(&sess))
+		goto close;
+
+	conf = nwif_iface_conf_create_byname(
+		nwif_conf_get_iface_table(sess.repo),
+		&sess.xact,
+		ctx->iface_name,
+		strlen(ctx->iface_name));
 	if (!conf) {
-		ret = -errno;
+		sess.err = -errno;
 		nwif_conf_clui_err(parser,
-		                   ret,
+		                   sess.err,
 		                   "failed to load '%s' interface",
 		                   ctx->iface_name);
-		goto close;
+		goto end;
 	}
 
 	switch (nwif_iface_conf_get_type(conf)) {
 #if defined(CONFIG_NWIF_ETHER)
 	case NWIF_ETHER_IFACE_TYPE:
-		ret = nwif_conf_clui_fill_ether(
+		sess.err = nwif_conf_clui_fill_ether(
 			nwif_ether_conf_from_iface(conf), attrs);
-		if (ret) {
+		if (sess.err) {
 			clui_err(parser,
 			         "failed to setup '%s' ethernet interface: "
 			         "unexpected attribute(s).",
@@ -986,23 +1009,24 @@ nwif_conf_clui_exec_set_iface_byname(const struct nwif_conf_clui_ctx *ctx,
 		nwif_ui_assert(0);
 	}
 
-	if (ret)
+	if (sess.err)
 		goto destroy;
 
-	ret = nwif_iface_conf_save(conf, &sess.xact, sess.repo);
-	if (ret)
+	sess.err = nwif_iface_conf_save(conf, &sess.xact);
+	if (sess.err)
 		nwif_conf_clui_err(parser,
-		                   ret,
+		                   sess.err,
 		                   "failed to save '%s' interface",
 		                   ctx->iface_name);
-
 
 destroy:
 	nwif_iface_conf_destroy(conf);
 
+end:
+	nwif_conf_clui_end_session(&sess);
+
 close:
-	sess.err = ret;
-	ret = nwif_conf_close_clui_session(&sess);
+	ret = nwif_conf_clui_close_session(&sess);
 
 free:
 	if (attrs->mask & NWIF_SYSPATH_ATTR)
@@ -1132,26 +1156,31 @@ nwif_conf_clui_exec_clear_iface_byid(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_iface_conf        *conf;
 	int                            ret;
 
-	ret = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	ret = nwif_conf_clui_open_session(&sess, ctx->path, parser);
 	if (ret)
 		return ret;
 
-	conf = nwif_iface_conf_create_byid(ctx->iface_id, &sess.xact, sess.repo);
+	if (nwif_conf_clui_begin_session(&sess))
+		goto close;
+
+	conf = nwif_iface_conf_create_byid(nwif_conf_get_iface_table(sess.repo),
+	                                   &sess.xact,
+	                                   ctx->iface_id);
 	if (!conf) {
-		ret = -errno;
+		sess.err = -errno;
 		nwif_conf_clui_err(parser,
-		                   ret,
+		                   sess.err,
 		                   "failed to load '%" PRIx64 "' interface",
 		                   ctx->iface_id);
-		goto close;
+		goto end;
 	}
 
 	switch (nwif_iface_conf_get_type(conf)) {
 #if defined(CONFIG_NWIF_ETHER)
 	case NWIF_ETHER_IFACE_TYPE:
-		ret = nwif_conf_clui_clear_ether(
+		sess.err = nwif_conf_clui_clear_ether(
 			nwif_ether_conf_from_iface(conf), &ctx->iface_attrs);
-		if (ret) {
+		if (sess.err) {
 			clui_err(parser,
 			         "failed to clear '%" PRIx64 "' ethernet "
 			         "interface attribute(s): "
@@ -1165,23 +1194,24 @@ nwif_conf_clui_exec_clear_iface_byid(const struct nwif_conf_clui_ctx *ctx,
 		nwif_ui_assert(0);
 	}
 
-	if (ret)
+	if (sess.err)
 		goto destroy;
 
-	ret = nwif_iface_conf_save(conf, &sess.xact, sess.repo);
-	if (ret)
+	sess.err = nwif_iface_conf_save(conf, &sess.xact);
+	if (sess.err)
 		nwif_conf_clui_err(parser,
-		                   ret,
+		                   sess.err,
 		                   "failed to save '%" PRIx64 "' interface",
 		                   ctx->iface_id);
 
 destroy:
 	nwif_iface_conf_destroy(conf);
 
-close:
-	sess.err = ret;
+end:
+	nwif_conf_clui_end_session(&sess);
 
-	return nwif_conf_close_clui_session(&sess);
+close:
+	return nwif_conf_clui_close_session(&sess);
 }
 
 static int
@@ -1194,29 +1224,33 @@ nwif_conf_clui_exec_clear_iface_byname(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_iface_conf        *conf;
 	int                            ret;
 
-	ret = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	ret = nwif_conf_clui_open_session(&sess, ctx->path, parser);
 	if (ret)
 		return ret;
 
-	conf = nwif_iface_conf_create_byname(ctx->iface_name,
-	                                     strlen(ctx->iface_name),
-	                                     &sess.xact,
-	                                     sess.repo);
+	if (nwif_conf_clui_begin_session(&sess))
+		goto close;
+
+	conf = nwif_iface_conf_create_byname(
+		nwif_conf_get_iface_table(sess.repo),
+		&sess.xact,
+		ctx->iface_name,
+		strlen(ctx->iface_name));
 	if (!conf) {
-		ret = -errno;
+		sess.err = -errno;
 		nwif_conf_clui_err(parser,
-		                   ret,
+		                   sess.err,
 		                   "failed to load '%s' interface",
 		                   ctx->iface_name);
-		goto close;
+		goto end;
 	}
 
 	switch (nwif_iface_conf_get_type(conf)) {
 #if defined(CONFIG_NWIF_ETHER)
 	case NWIF_ETHER_IFACE_TYPE:
-		ret = nwif_conf_clui_clear_ether(
+		sess.err = nwif_conf_clui_clear_ether(
 			nwif_ether_conf_from_iface(conf), &ctx->iface_attrs);
-		if (ret) {
+		if (sess.err) {
 			clui_err(parser,
 			         "failed to clear '%s' ethernet interface "
 			         "attribute(s): unexpected attribute(s).",
@@ -1229,23 +1263,24 @@ nwif_conf_clui_exec_clear_iface_byname(const struct nwif_conf_clui_ctx *ctx,
 		nwif_ui_assert(0);
 	}
 
-	if (ret)
+	if (sess.err)
 		goto destroy;
 
-	ret = nwif_iface_conf_save(conf, &sess.xact, sess.repo);
-	if (ret)
+	sess.err = nwif_iface_conf_save(conf, &sess.xact);
+	if (sess.err)
 		nwif_conf_clui_err(parser,
-		                   ret,
+		                   sess.err,
 		                   "failed to save '%s' interface",
 		                   ctx->iface_name);
 
 destroy:
 	nwif_iface_conf_destroy(conf);
 
-close:
-	sess.err = ret;
+end:
+	nwif_conf_clui_end_session(&sess);
 
-	return nwif_conf_close_clui_session(&sess);
+close:
+	return nwif_conf_clui_close_session(&sess);
 }
 
 static int
@@ -1353,13 +1388,16 @@ nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 {
 	nwif_ui_assert_session(session);
 
-	struct libscols_table   *tbl;
+	const struct kvs_table  *ifaces;
 	struct kvs_iter          iter;
+	struct libscols_table   *tbl;
 	uint64_t                 id;
         struct kvs_chunk         item;
 	int                      err;
 
-	err = nwif_iface_conf_init_iter(session->repo, &session->xact, &iter);
+	ifaces = nwif_conf_get_iface_table(session->repo);
+
+	err = nwif_iface_conf_init_iter(ifaces, &session->xact, &iter);
 	if (err) {
 		nwif_conf_clui_err(
 			session->parser,
@@ -1380,17 +1418,17 @@ nwif_conf_clui_show_all_ifaces(struct nwif_conf_clui_session *session)
 	for (err = nwif_iface_conf_iter_first(&iter, &id, &item);
 	     !err;
 	     err = nwif_iface_conf_iter_next(&iter, &id, &item)) {
-		struct nwif_iface_conf *iface;
+		struct nwif_iface_conf *conf;
 
-		iface = nwif_iface_conf_create_from_rec(id, &item);
-		if (!iface) {
+		conf = nwif_iface_conf_create_from_rec(ifaces, id, &item);
+		if (!conf) {
 			err = -errno;
 			break;
 		}
 
-		err = nwif_ui_render_iface_conf_table(tbl, iface);
+		err = nwif_ui_render_iface_conf_table(tbl, conf);
 
-		nwif_iface_conf_destroy(iface);
+		nwif_iface_conf_destroy(conf);
 	}
 
 	if (err && (err != -ENOENT)) {
@@ -1437,13 +1475,19 @@ nwif_conf_clui_exec_show_all_ifaces(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_conf_clui_session sess;
 	int                           err;
 
-	err = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	err = nwif_conf_clui_open_session(&sess, ctx->path, parser);
 	if (err)
 		return err;
 
+	if (nwif_conf_clui_begin_session(&sess))
+		goto close;
+
 	nwif_conf_clui_show_all_ifaces(&sess);
 
-	return nwif_conf_close_clui_session(&sess);
+	nwif_conf_clui_end_session(&sess);
+
+close:
+	return nwif_conf_clui_close_session(&sess);
 }
 
 static int
@@ -1487,10 +1531,11 @@ nwif_conf_clui_show_iface_byname(struct nwif_conf_clui_session *session,
 	struct nwif_iface_conf *iface;
 	int                     ret;
 
-	iface = nwif_iface_conf_create_byname(name,
-	                                      strlen(name),
-	                                      &session->xact,
-	                                      session->repo);
+	iface = nwif_iface_conf_create_byname(
+		nwif_conf_get_iface_table(session->repo),
+		&session->xact,
+		name,
+		strlen(name));
 	if (!iface) {
 		nwif_conf_clui_err(
 			session->parser,
@@ -1516,13 +1561,19 @@ nwif_conf_clui_exec_show_iface_byname(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_conf_clui_session sess;
 	int                           err;
 
-	err = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	err = nwif_conf_clui_open_session(&sess, ctx->path, parser);
 	if (err)
 		return err;
 
-	nwif_conf_clui_show_iface_byname(&sess, ctx->iface_name);
+	if (nwif_conf_clui_begin_session(&sess))
+		goto close;
 
-	return nwif_conf_close_clui_session(&sess);
+	sess.err = nwif_conf_clui_show_iface_byname(&sess, ctx->iface_name);
+
+	nwif_conf_clui_end_session(&sess);
+
+close:
+	return nwif_conf_clui_close_session(&sess);
 }
 
 static int
@@ -1532,7 +1583,10 @@ nwif_conf_clui_show_iface_byid(struct nwif_conf_clui_session *session,
 	struct nwif_iface_conf *iface;
 	int                     ret;
 
-	iface = nwif_iface_conf_create_byid(id, &session->xact, session->repo);
+	iface = nwif_iface_conf_create_byid(
+		nwif_conf_get_iface_table(session->repo),
+		&session->xact,
+		id);
 	if (!iface) {
 		char str[NWIF_CONF_ID_STRING_MAX];
 
@@ -1561,13 +1615,19 @@ nwif_conf_clui_exec_show_iface_byid(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_conf_clui_session sess;
 	int                           err;
 
-	err = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	err = nwif_conf_clui_open_session(&sess, ctx->path, parser);
 	if (err)
 		return err;
 
-	nwif_conf_clui_show_iface_byid(&sess, ctx->iface_id);
+	if (nwif_conf_clui_begin_session(&sess))
+		goto close;
 
-	return nwif_conf_close_clui_session(&sess);
+	sess.err = nwif_conf_clui_show_iface_byid(&sess, ctx->iface_id);
+
+	nwif_conf_clui_end_session(&sess);
+
+close:
+	return nwif_conf_clui_close_session(&sess);
 }
 
 static int
@@ -1670,25 +1730,32 @@ nwif_conf_clui_exec_del_iface_byid(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_conf_clui_session sess;
 	int                           err;
 
-	err = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	err = nwif_conf_clui_open_session(&sess, ctx->path, parser);
 	if (err)
 		return err;
 
-	err = nwif_iface_conf_del_byid(ctx->iface_id, &sess.xact, sess.repo);
-	if (err) {
+	if (nwif_conf_clui_begin_session(&sess))
+		goto close;
+
+	sess.err = nwif_iface_conf_del_byid(
+		nwif_conf_get_iface_table(sess.repo),
+		&sess.xact,
+		ctx->iface_id);
+	if (sess.err) {
 		char str[NWIF_CONF_ID_STRING_MAX];
 
 		nwif_ui_sprintf_conf_id(str, ctx->iface_id);
 		nwif_conf_clui_err(parser,
-		                   err,
+		                   sess.err,
 		                   "failed to delete interface identified by "
 		                   "'%s'",
 		                   str);
 	}
 
-	sess.err = err;
+	nwif_conf_clui_end_session(&sess);
 
-	return nwif_conf_close_clui_session(&sess);
+close:
+	return nwif_conf_clui_close_session(&sess);
 }
 
 static int
@@ -1700,27 +1767,32 @@ nwif_conf_clui_exec_del_iface_byname(const struct nwif_conf_clui_ctx *ctx,
 	struct nwif_conf_clui_session sess;
 	int                           err;
 
-	err = nwif_conf_begin_clui_session(&sess, ctx->path, parser);
+	err = nwif_conf_clui_open_session(&sess, ctx->path, parser);
 	if (err)
 		return err;
 
-	err = nwif_iface_conf_del_byname(ctx->iface_name,
-	                                 strlen(ctx->iface_name),
-	                                 &sess.xact,
-	                                 sess.repo);
-	if (err) {
+	if (nwif_conf_clui_begin_session(&sess))
+		goto close;
+
+	sess.err = nwif_iface_conf_del_byname(
+		nwif_conf_get_iface_table(sess.repo),
+		&sess.xact,
+		ctx->iface_name,
+		strlen(ctx->iface_name));
+	if (sess.err) {
 		char str[NWIF_CONF_ID_STRING_MAX];
 
 		nwif_ui_sprintf_conf_id(str, ctx->iface_id);
 		nwif_conf_clui_err(parser,
-		                   err,
+		                   sess.err,
 		                   "failed to delete interface '%s'",
 		                   ctx->iface_name);
 	}
 
-	sess.err = err;
+	nwif_conf_clui_end_session(&sess);
 
-	return nwif_conf_close_clui_session(&sess);
+close:
+	return nwif_conf_clui_close_session(&sess);
 }
 
 static int

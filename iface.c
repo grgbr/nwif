@@ -1,29 +1,10 @@
-#include "common.h"
-#include <nwif/conf.h>
+#include "iface_priv.h"
 #include <utils/string.h>
-#include <utils/net.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <glob.h>
-#include <errno.h>
-#include <sys/stat.h>
 #include <linux/if.h>
 
-#define NWIF_SYSNETDEV_IFINDEX_PATTERN "net/*/ifindex"
 #define NWIF_IFACE_CONF_BASENAME       "iface"
-
-bool
-nwif_iface_oper_state_isok(uint8_t oper_state)
-{
-	switch (oper_state) {
-	case IF_OPER_UP:
-	case IF_OPER_DOWN:
-		return true;
-
-	default:
-		return false;
-	}
-}
+#define NWIF_SYSNETDEV_IFINDEX_PATTERN "net/*/ifindex"
 
 int
 nwif_iface_probe_sysid(const char *syspath)
@@ -83,409 +64,83 @@ free:
 }
 
 /******************************************************************************
- * Base interface configuration handling
+ * Interface attribute related helpers
  ******************************************************************************/
 
-#define nwif_iface_conf_assert_get(_conf) \
-	nwif_assert((_conf)->state != NWIF_IFACE_CONF_EMPTY_STATE); \
-	nwif_assert((_conf)->state != NWIF_IFACE_CONF_FAIL_STATE); \
-	nwif_iface_conf_assert_data((_conf)->data)
-
-#define nwif_iface_conf_assert_set(_conf) \
-	nwif_assert((_conf)->state != NWIF_IFACE_CONF_FAIL_STATE); \
-	nwif_iface_conf_assert_data((_conf)->data)
-
-#define nwif_iface_conf_assert_clear(_conf) \
-	nwif_iface_conf_assert_get(_conf)
-
-uint64_t
-nwif_iface_conf_get_id(const struct nwif_iface_conf *conf)
+bool
+nwif_iface_oper_state_isok(uint8_t oper_state)
 {
-	nwif_iface_conf_assert_get(conf);
-
-	return conf->id;
-}
-
-enum nwif_iface_type
-nwif_iface_conf_get_type(const struct nwif_iface_conf *conf)
-{
-	nwif_iface_conf_assert_get(conf);
-
-	return conf->data[0].type;
-}
-
-const char *
-nwif_iface_conf_get_name(const struct nwif_iface_conf *conf)
-{
-	nwif_iface_conf_assert_get(conf);
-
-	if (!nwif_iface_conf_has_attr(conf, NWIF_NAME_ATTR))
-		return NULL;
-
-	return conf->data[0].name;
-}
-
-void
-nwif_iface_conf_set_name(struct nwif_iface_conf *conf,
-                         const char             *name,
-                         size_t                  len)
-{
-	nwif_iface_conf_assert_set(conf);
-	nwif_assert(unet_check_iface_name(name) == (ssize_t)len);
-
-	if (nwif_iface_conf_has_attr(conf, NWIF_NAME_ATTR) &&
-	    !strncmp(conf->data[0].name, name, sizeof(conf->data[0].name)))
-		return;
-
-	memcpy(conf->data[0].name, name, len);
-	conf->data[0].name[len] = '\0';
-
-	nwif_iface_conf_set_attr(conf, NWIF_NAME_ATTR);
-}
-
-void
-nwif_iface_conf_clear_name(struct nwif_iface_conf *conf)
-{
-	nwif_iface_conf_assert_clear(conf);
-
-	nwif_iface_conf_clear_attr(conf, NWIF_NAME_ATTR);
-}
-
-void
-nwif_iface_conf_get_oper_state(const struct nwif_iface_conf *conf,
-                               uint8_t                      *oper_state)
-{
-	nwif_iface_conf_assert_get(conf);
-	nwif_assert(oper_state);
-
-	if (nwif_iface_conf_has_attr(conf, NWIF_OPER_STATE_ATTR))
-		*oper_state = conf->data[0].oper_state;
-	else
-		*oper_state = IF_OPER_DOWN;
-}
-
-void
-nwif_iface_conf_set_oper_state(struct nwif_iface_conf *conf, uint8_t oper_state)
-{
-	nwif_iface_conf_assert_set(conf);
-	nwif_assert(nwif_iface_oper_state_isok(oper_state));
-
-	if (nwif_iface_conf_has_attr(conf, NWIF_OPER_STATE_ATTR) &&
-	    (conf->data[0].oper_state == oper_state))
-		return;
-
-	conf->data[0].oper_state = oper_state;
-
-	nwif_iface_conf_set_attr(conf, NWIF_OPER_STATE_ATTR);
-}
-
-void
-nwif_iface_conf_clear_oper_state(struct nwif_iface_conf *conf)
-{
-	nwif_iface_conf_assert_clear(conf);
-
-	nwif_iface_conf_clear_attr(conf, NWIF_OPER_STATE_ATTR);
-}
-
-int
-nwif_iface_conf_get_mtu(const struct nwif_iface_conf *conf, uint32_t *mtu)
-{
-	nwif_iface_conf_assert_get(conf);
-	nwif_assert(mtu);
-
-	if (!nwif_iface_conf_has_attr(conf, NWIF_MTU_ATTR))
-		return -ENODATA;
-
-	*mtu = conf->data[0].mtu;
-
-	return 0;
-}
-
-void
-nwif_iface_conf_set_mtu(struct nwif_iface_conf *conf, uint32_t mtu)
-{
-	nwif_iface_conf_assert_set(conf);
-	nwif_assert(unet_mtu_isok(mtu));
-
-	if (nwif_iface_conf_has_attr(conf, NWIF_MTU_ATTR) &&
-	    (conf->data[0].mtu == mtu))
-		return;
-
-	conf->data[0].mtu = mtu;
-
-	nwif_iface_conf_set_attr(conf, NWIF_MTU_ATTR);
-}
-
-void
-nwif_iface_conf_clear_mtu(struct nwif_iface_conf *conf)
-{
-	nwif_iface_conf_assert_clear(conf);
-
-	nwif_iface_conf_clear_attr(conf, NWIF_MTU_ATTR);
-}
-
-int
-nwif_iface_conf_check_data(const struct kvs_chunk *item,
-                           enum nwif_iface_type    type,
-                           size_t                  size)
-{
-	const struct nwif_iface_conf_data *data;
-
-	nwif_assert(item);
-	nwif_assert(item->size > sizeof(*data));
-	nwif_assert(item->data);
-	nwif_assert(type >= 0);
-	nwif_assert(type < NWIF_TYPE_NR);
-	nwif_assert(size > sizeof(*data));
-
-	if (item->size != size)
-		return -EMSGSIZE;
-
-	data = (struct nwif_iface_conf_data *)item->data;
-	if (data->type != type)
-		return -ENOMSG;
-
-	if (nwif_iface_conf_data_has_attr(data, NWIF_NAME_ATTR) &&
-	    (unet_check_iface_name(data->name) < 0))
-		return -EBADMSG;
-
-	if (nwif_iface_conf_data_has_attr(data, NWIF_OPER_STATE_ATTR) &&
-	    !nwif_iface_oper_state_isok(data->oper_state))
-		return -EBADMSG;
-
-	if (nwif_iface_conf_data_has_attr(data, NWIF_MTU_ATTR) &&
-	    !unet_mtu_isok(data->mtu))
-		return -EBADMSG;
-
-	return 0;
-}
-
-int
-nwif_iface_conf_iter_first(const struct kvs_iter   *iter,
-                           uint64_t                *id,
-                           struct kvs_chunk        *item)
-{
-	return kvs_autorec_iter_first(iter, id, item);
-}
-
-int
-nwif_iface_conf_iter_next(const struct kvs_iter   *iter,
-                          uint64_t                *id,
-                          struct kvs_chunk        *item)
-{
-	return kvs_autorec_iter_next(iter, id, item);
-}
-
-int
-nwif_iface_conf_init_iter(const struct nwif_conf_repo *repo,
-                          const struct kvs_xact       *xact,
-                          struct kvs_iter             *iter)
-{
-	return kvs_autorec_init_iter(&repo->ifaces.data, xact, iter);
-}
-
-int
-nwif_iface_conf_fini_iter(const struct kvs_iter *iter)
-{
-	return kvs_autorec_fini_iter(iter);
-}
-
-int
-nwif_iface_conf_save(struct nwif_iface_conf *conf,
-                     const struct kvs_xact  *xact,
-                     struct nwif_conf_repo  *repo)
-{
-	nwif_assert(conf);
-
-	int err;
-
-	switch (conf->state) {
-	case NWIF_IFACE_CONF_EMPTY_STATE:
-		return -EBADFD;
-
-	case NWIF_IFACE_CONF_CLEAN_STATE:
-		return 0;
-
-	case NWIF_IFACE_CONF_DIRTY_STATE:
-		break;
-
-	case NWIF_IFACE_CONF_FAIL_STATE:
-	default:
-		nwif_assert(0);
-	}
-
-	nwif_assert(conf->data[0].type >= 0);
-	nwif_assert(conf->data[0].type < NWIF_TYPE_NR);
-	nwif_assert(!nwif_iface_conf_has_attr(conf, NWIF_NAME_ATTR) ||
-	            (unet_check_iface_name(conf->data[0].name) > 0));
-	nwif_assert(!nwif_iface_conf_has_attr(conf, NWIF_MTU_ATTR) ||
-	            unet_mtu_isok(conf->data[0].mtu));
-	nwif_assert(!nwif_iface_conf_has_attr(conf, NWIF_OPER_STATE_ATTR) ||
-	            nwif_iface_oper_state_isok(conf->data[0].oper_state));
-
-	switch (conf->data[0].type) {
-	case NWIF_ETHER_IFACE_TYPE:
-		err = nwif_ether_conf_save(conf, xact, repo);
-		break;
+	switch (oper_state) {
+	case IF_OPER_UP:
+	case IF_OPER_DOWN:
+		return true;
 
 	default:
-		return -ENOTSUP;
-	}
-
-	conf->state = !err ? NWIF_IFACE_CONF_CLEAN_STATE :
-	                     NWIF_IFACE_CONF_FAIL_STATE;
-
-	return err;
-}
-
-static int
-nwif_iface_conf_check_rec(uint64_t id, const struct kvs_chunk *item)
-{
-	nwif_assert(kvs_autorec_id_isok(id));
-	nwif_assert(item);
-
-	const struct nwif_iface_conf_data *data;
-
-	data = (const struct nwif_iface_conf_data *)item->data;
-	if (!data)
-		return -ENODATA;
-
-	if (item->size <= sizeof(*data))
-		return -EMSGSIZE;
-
-	return data->type;
-}
-
-int
-nwif_iface_conf_reload(struct nwif_iface_conf *conf,
-                       const struct kvs_xact  *xact,
-                       struct nwif_conf_repo  *repo)
-{
-	nwif_assert(conf);
-	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
-	nwif_assert(conf->data[0].type >= 0);
-	nwif_assert(conf->data[0].type < NWIF_TYPE_NR);
-
-	struct kvs_chunk item;
-	int              ret;
-
-	ret = kvs_autorec_get_byid(&repo->ifaces.data, xact, conf->id, &item);
-	if (ret)
-		return ret;
-
-	ret = nwif_iface_conf_check_rec(conf->id, &item);
-	if (ret < 0)
-		return ret;
-
-	switch (ret) {
-	case NWIF_ETHER_IFACE_TYPE:
-		return nwif_ether_conf_load_from_data(conf, &item);
-
-	default:
-		return -ENOTSUP;
+		return false;
 	}
 }
 
-int
-nwif_iface_conf_del_byid(uint64_t                     id,
-                         const struct kvs_xact       *xact,
-                         const struct nwif_conf_repo *repo)
+/******************************************************************************
+ * Interface configuration table handling
+ ******************************************************************************/
+
+#if defined(CONFIG_NWIF_ETHER)
+
+extern const struct nwif_iface_conf_impl nwif_ether_conf_impl;
+#define NWIF_ETHER_CONF_IMPL (&nwif_ether_conf_impl)
+
+#else  /* !defined(CONFIG_NWIF_ETHER) */
+
+#define NWIF_ETHER_CONF_IMPL (NULL)
+
+#endif /* defined(CONFIG_NWIF_ETHER) */
+
+static const struct nwif_iface_conf_impl * const
+nwif_iface_conf_impl_table[NWIF_IFACE_TYPE_NR] = {
+	[NWIF_ETHER_IFACE_TYPE] = NWIF_ETHER_CONF_IMPL
+};
+
+static const struct nwif_iface_conf_impl *
+nwif_iface_conf_get_impl(const struct nwif_iface_conf_data *data)
 {
-	return kvs_autorec_del_byid(&repo->ifaces.data, xact, id);
-}
+	nwif_iface_conf_assert_data(data);
 
-int
-nwif_iface_conf_del_byname(const char                  *name,
-                           size_t                       len,
-                           const struct kvs_xact       *xact,
-                           const struct nwif_conf_repo *repo)
-{
-	nwif_assert(unet_check_iface_name(name) == (ssize_t)len);
+	const struct nwif_iface_conf_impl *impl;
 
-	struct kvs_chunk field = { .size = len, .data = name };
-
-	return kvs_autorec_del_byfield(
-		&repo->ifaces.idx[NWIF_IFACE_CONF_NAMES_SID],
-		xact,
-		&field);
-}
-
-struct nwif_iface_conf *
-nwif_iface_conf_create_from_rec(uint64_t id, const struct kvs_chunk *item)
-{
-	int ret;
-
-	ret = nwif_iface_conf_check_rec(id, item);
-	if (ret < 0) {
-		errno = -ret;
-		return NULL;
-	}
-
-	switch (ret) {
-	case NWIF_ETHER_IFACE_TYPE:
-		return nwif_ether_conf_create_from_rec(id, item);
-
-	default:
+	impl = nwif_iface_conf_impl_table[data->type];
+	if (!impl) {
 		errno = ENOTSUP;
 		return NULL;
 	}
-}
 
-struct nwif_iface_conf *
-nwif_iface_conf_create_byid(uint64_t                     id,
-                            const struct kvs_xact       *xact,
-                            const struct nwif_conf_repo *repo)
-{
-	struct kvs_chunk item;
-	int              err;
+	nwif_iface_conf_assert_impl(impl);
 
-	err = kvs_autorec_get_byid(&repo->ifaces.data, xact, id, &item);
-	if (err) {
-		errno = -err;
-		return NULL;
-	}
-
-	return nwif_iface_conf_create_from_rec(id, &item);
-}
-
-struct nwif_iface_conf *
-nwif_iface_conf_create_byname(const char                  *name,
-                              size_t                       len,
-                              const struct kvs_xact       *xact,
-                              const struct nwif_conf_repo *repo)
-{
-	int                     ret;
-	const struct kvs_chunk  field = {
-		.size = len,
-		.data = name
-	};
-	uint64_t                id;
-	struct kvs_chunk        item;
-
-	ret = kvs_autorec_get_byfield(
-		&repo->ifaces.idx[NWIF_IFACE_CONF_NAMES_SID],
-		xact,
-		&field,
-		&id,
-		&item);
-	if (ret < 0) {
-		errno = -ret;
-		return NULL;
-	}
-
-	return nwif_iface_conf_create_from_rec(id, &item);
-}
-
-void
-nwif_iface_conf_destroy(struct nwif_iface_conf *conf)
-{
-	free(conf);
+	return impl;
 }
 
 static int
-nwif_iface_conf_bind_name_idx(const struct kvs_chunk *pkey __unused,
-                              const struct kvs_chunk *item,
-                              struct kvs_chunk       *skey)
+nwif_iface_conf_open_data(struct kvs_table       *table,
+                          const struct kvs_depot *depot,
+                          const struct kvs_xact  *xact,
+                          mode_t                  mode)
+{
+	return kvs_autorec_open(kvs_table_get_data_store(table),
+	                        depot,
+	                        xact,
+	                        NWIF_IFACE_CONF_BASENAME ".dat",
+	                        mode);
+}
+
+static int
+nwif_iface_conf_close_data(const struct kvs_table *table)
+{
+	return kvs_autorec_close(kvs_table_get_data_store(table));
+}
+
+static int
+nwif_iface_conf_bind_name_indx(const struct kvs_chunk *pkey __unused,
+                               const struct kvs_chunk *item,
+                               struct kvs_chunk       *skey)
 {
 	nwif_assert(pkey->size);
 	nwif_assert(pkey->data);
@@ -493,12 +148,11 @@ nwif_iface_conf_bind_name_idx(const struct kvs_chunk *pkey __unused,
 	nwif_assert(item->data);
 	nwif_assert(skey);
 
-	struct nwif_iface_conf_data *data;
-
-	if (item->size <= sizeof(*data))
-		return -EMSGSIZE;
+	const struct nwif_iface_conf_data *data;
 
 	data = (struct nwif_iface_conf_data *)item->data;
+
+	nwif_assert(item->size > sizeof(*data));
 	nwif_iface_conf_assert_data(data);
 
 	if (!nwif_iface_conf_data_has_attr(data, NWIF_NAME_ATTR)) {
@@ -515,7 +169,90 @@ nwif_iface_conf_bind_name_idx(const struct kvs_chunk *pkey __unused,
 }
 
 static int
-nwif_iface_conf_bind_syspath_idx(const struct kvs_chunk *pkey __unused,
+nwif_iface_conf_open_name_indx(struct kvs_table       *table,
+                               const struct kvs_depot *depot,
+                               const struct kvs_xact  *xact,
+                               mode_t                  mode)
+{
+	struct kvs_store *indx;
+
+	indx = kvs_table_get_indx_store(table, NWIF_IFACE_CONF_NAME_IID);
+
+	return kvs_open_indx(indx,
+	                     &table->data,
+	                     depot,
+	                     xact,
+	                     NWIF_IFACE_CONF_BASENAME ".idx",
+	                     "name",
+	                     mode,
+	                     nwif_iface_conf_bind_name_indx);
+}
+
+static int
+nwif_iface_conf_close_name_indx(const struct kvs_table *table)
+{
+	return kvs_close_indx(
+		kvs_table_get_indx_store(table, NWIF_IFACE_CONF_NAME_IID));
+}
+
+static int
+nwif_iface_conf_bind_syspath_indx(const struct kvs_chunk *pkey __unused,
+                                  const struct kvs_chunk *item,
+                                  struct kvs_chunk       *skey)
+{
+	nwif_assert(pkey->size);
+	nwif_assert(pkey->data);
+	nwif_assert(item->size);
+	nwif_assert(item->data);
+	nwif_assert(skey);
+
+	const struct nwif_iface_conf_data *data;
+	const struct nwif_iface_conf_impl *impl;
+
+	data = (struct nwif_iface_conf_data *)item->data;
+
+	nwif_assert(item->size > sizeof(*data));
+	if (!nwif_iface_conf_data_has_attr(data, NWIF_SYSPATH_ATTR)) {
+		skey->size = 0;
+		return 0;
+	}
+
+	impl = nwif_iface_conf_get_impl(data);
+	if (!impl)
+		return -errno;
+
+	return impl->bind_syspath(item, skey);
+}
+
+static int
+nwif_iface_conf_open_syspath_indx(struct kvs_table       *table,
+                                  const struct kvs_depot *depot,
+                                  const struct kvs_xact  *xact,
+                                  mode_t                  mode)
+{
+	struct kvs_store *indx;
+	
+	indx = kvs_table_get_indx_store(table, NWIF_IFACE_CONF_SYSPATH_IID);
+
+	return kvs_open_indx(indx,
+	                     &table->data,
+	                     depot,
+	                     xact,
+	                     NWIF_IFACE_CONF_BASENAME ".idx",
+	                     "syspath",
+	                     mode,
+	                     nwif_iface_conf_bind_syspath_indx);
+}
+
+static int
+nwif_iface_conf_close_syspath_indx(const struct kvs_table *table)
+{
+	return kvs_close_indx(
+		kvs_table_get_indx_store(table, NWIF_IFACE_CONF_SYSPATH_IID));
+}
+
+static int
+nwif_iface_conf_bind_hwaddr_indx(const struct kvs_chunk *pkey,
                                  const struct kvs_chunk *item,
                                  struct kvs_chunk       *skey)
 {
@@ -525,127 +262,473 @@ nwif_iface_conf_bind_syspath_idx(const struct kvs_chunk *pkey __unused,
 	nwif_assert(item->data);
 	nwif_assert(skey);
 
-	struct nwif_iface_conf_data *data;
-
-	if (item->size <= sizeof(*data))
-		return -EMSGSIZE;
+	const struct nwif_iface_conf_data *data;
+	const struct nwif_iface_conf_impl *impl;
 
 	data = (struct nwif_iface_conf_data *)item->data;
-	nwif_iface_conf_assert_data(data);
 
-	if (!nwif_iface_conf_data_has_attr(data, NWIF_SYSPATH_ATTR)) {
-		skey->size = 0;
-		return 0;
-	}
-
-	switch (data->type) {
-	case NWIF_ETHER_IFACE_TYPE:
-		return nwif_ether_conf_bind_syspath_idx(item, skey);
-
-	default:
-		return -ENOTSUP;
-	}
-}
-
-static int
-nwif_iface_conf_bind_hwaddr_idx(const struct kvs_chunk *pkey,
-                                const struct kvs_chunk *item,
-                                struct kvs_chunk       *skey)
-{
-	nwif_assert(pkey->size);
-	nwif_assert(pkey->data);
-	nwif_assert(item->size);
-	nwif_assert(item->data);
-	nwif_assert(skey);
-
-	struct nwif_iface_conf_data *data;
-
-	if (item->size <= sizeof(*data))
-		return -EMSGSIZE;
-
-	data = (struct nwif_iface_conf_data *)item->data;
-	nwif_iface_conf_assert_data(data);
-
+	nwif_assert(item->size > sizeof(*data));
 	if (!nwif_iface_conf_data_has_attr(data, NWIF_HWADDR_ATTR)) {
 		skey->size = 0;
 		return 0;
 	}
 
-	switch (data->type) {
-	case NWIF_ETHER_IFACE_TYPE:
-		return nwif_ether_conf_bind_hwaddr_idx(item, skey);
+	impl = nwif_iface_conf_get_impl(data);
+	if (!impl)
+		return -errno;
 
-	default:
-		return -ENOTSUP;
-	}
+	return impl->bind_hwaddr(item, skey);
 }
 
-int
-nwif_iface_conf_open_table(struct nwif_iface_conf_table *table,
-                           const struct kvs_depot       *depot,
-                           const struct kvs_xact        *xact)
+static int
+nwif_iface_conf_open_hwaddr_indx(struct kvs_table       *table,
+                                 const struct kvs_depot *depot,
+                                 const struct kvs_xact  *xact,
+                                 mode_t                  mode)
 {
-	int err;
+	struct kvs_store *indx;
+	
+	indx = kvs_table_get_indx_store(table, NWIF_IFACE_CONF_HWADDR_IID);
 
-	table->open_cnt = 0;
-	err = kvs_autorec_open(&table->data,
-	                       depot,
-	                       xact,
-	                       NWIF_IFACE_CONF_BASENAME ".db",
-	                       S_IRUSR | S_IWUSR);
-	if (err)
-		return err;
-
-	err = kvs_open_index(&table->idx[table->open_cnt++],
+	return kvs_open_indx(indx,
 	                     &table->data,
 	                     depot,
 	                     xact,
 	                     NWIF_IFACE_CONF_BASENAME ".idx",
-	                     "names",
-	                     S_IRUSR | S_IWUSR,
-	                     nwif_iface_conf_bind_name_idx);
+	                     "hwaddr",
+	                     mode,
+	                     nwif_iface_conf_bind_hwaddr_indx);
+}
+
+static int
+nwif_iface_conf_close_hwaddr_indx(const struct kvs_table *table)
+{
+	return kvs_close_indx(
+		kvs_table_get_indx_store(table, NWIF_IFACE_CONF_HWADDR_IID));
+}
+
+const struct kvs_table_desc nwif_iface_conf_desc = {
+	.data_ops = {
+		.open  = nwif_iface_conf_open_data,
+		.close = nwif_iface_conf_close_data
+	},
+	.indx_nr  = NWIF_IFACE_CONF_IID_NR,
+	.indx_ops = {
+		[NWIF_IFACE_CONF_NAME_IID] = {
+			.open  = nwif_iface_conf_open_name_indx,
+			.close = nwif_iface_conf_close_name_indx
+		},
+		[NWIF_IFACE_CONF_SYSPATH_IID] = {
+			.open  = nwif_iface_conf_open_syspath_indx,
+			.close = nwif_iface_conf_close_syspath_indx
+		},
+		[NWIF_IFACE_CONF_HWADDR_IID] = {
+			.open  = nwif_iface_conf_open_hwaddr_indx,
+			.close = nwif_iface_conf_close_hwaddr_indx
+		}
+	}
+};
+
+static int
+nwif_iface_conf_get_byid(const struct kvs_table *table,
+                         const struct kvs_xact  *xact,
+                         uint64_t                id,
+                         struct kvs_chunk       *item)
+{
+	return kvs_autorec_get_byid(kvs_table_get_data_store(table),
+	                            xact,
+	                            id,
+	                            item);
+}
+
+static int
+nwif_iface_conf_get_byname(const struct kvs_table *table,
+                           const struct kvs_xact  *xact,
+                           const char             *name,
+                           size_t                  len,
+                           uint64_t               *id,
+                           struct kvs_chunk       *item)
+{
+	nwif_assert(unet_check_iface_name(name) == (ssize_t)len);
+
+	const struct kvs_chunk  field = {
+		.size = len,
+		.data = name
+	};
+
+	return kvs_autorec_get_byfield(
+		kvs_table_get_indx_store(table, NWIF_IFACE_CONF_NAME_IID),
+		xact,
+		&field,
+		id,
+		item);
+}
+
+static int
+nwif_iface_conf_save_byid(const struct kvs_table            *table,
+                          const struct kvs_xact             *xact,
+                          uint64_t                          *id,
+                          const struct nwif_iface_conf_data *data)
+{
+	nwif_assert(id);
+
+	int                                err;
+	struct kvs_chunk                   item;
+	const struct nwif_iface_conf_impl *impl;
+
+	impl = nwif_iface_conf_get_impl(data);
+	if (!impl)
+		return -errno;
+
+	err = impl->check_data(*id, data);
+	if (err < 0)
+		return err;
+
+	item.data = data;
+	item.size = impl->data_size;
+	if (!kvs_autorec_id_isok(*id))
+		err = kvs_autorec_add(kvs_table_get_data_store(table),
+		                      xact,
+		                      id,
+		                      &item);
+	else
+		err = kvs_autorec_update(kvs_table_get_data_store(table),
+		                         xact,
+		                         *id,
+		                         &item);
+
 	if (err)
 		return err;
 
-	err = kvs_open_index(&table->idx[table->open_cnt++],
-	                     &table->data,
-	                     depot,
-	                     xact,
-	                     NWIF_IFACE_CONF_BASENAME ".idx",
-	                     "syspaths",
-	                     S_IRUSR | S_IWUSR,
-	                     nwif_iface_conf_bind_syspath_idx);
-	if (err)
-		return err;
-
-	err = kvs_open_index(&table->idx[table->open_cnt++],
-	                     &table->data,
-	                     depot,
-	                     xact,
-	                     NWIF_IFACE_CONF_BASENAME ".idx",
-	                     "hwaddrs",
-	                     S_IRUSR | S_IWUSR,
-	                     nwif_iface_conf_bind_hwaddr_idx);
-	if (err)
-		return err;
+	nwif_assert(kvs_autorec_id_isok(*id));
 
 	return 0;
 }
 
 int
-nwif_iface_conf_close_table(struct nwif_iface_conf_table *table)
+nwif_iface_conf_del_byname(const struct kvs_table *table,
+                           const struct kvs_xact  *xact,
+                           const char             *name,
+                           size_t                  len)
 {
-	int ret = 0;
+	nwif_assert(unet_check_iface_name(name) == (ssize_t)len);
 
-	while (!ret && table->open_cnt)
-		ret = kvs_close_index(&table->idx[--table->open_cnt]);
-	while (table->open_cnt)
-		kvs_close_index(&table->idx[--table->open_cnt]);
+	const struct kvs_chunk field = { .size = len, .data = name };
 
-	if (!ret)
-		ret = kvs_autorec_close(&table->data);
+	return kvs_autorec_del_byfield(
+		kvs_table_get_indx_store(table, NWIF_IFACE_CONF_NAME_IID),
+		xact,
+		&field);
+}
+
+static const struct nwif_iface_conf_impl *
+nwif_iface_conf_check_data(uint64_t                           id,
+                           const struct nwif_iface_conf_data *data,
+                           size_t                             size)
+{
+	nwif_assert(kvs_autorec_id_isok(id));
+	nwif_assert(data);
+	nwif_assert(size > sizeof(*data));
+
+	const struct nwif_iface_conf_impl *impl;
+
+	impl = nwif_iface_conf_get_impl(data);
+	if (!impl)
+		return NULL;
+
+	nwif_assert(size == impl->data_size);
+	nwif_assert(!impl->check_data(id, data));
+
+	return impl;
+}
+
+struct nwif_iface_conf *
+nwif_iface_conf_create_from_rec(const struct kvs_table *table,
+                                uint64_t                id,
+                                const struct kvs_chunk *item)
+{
+	kvs_table_assert(table);
+	nwif_assert(kvs_autorec_id_isok(id));
+	nwif_assert(item);
+
+	const struct nwif_iface_conf_impl *impl;
+	struct nwif_iface_conf            *conf;
+
+	impl = nwif_iface_conf_check_data(id, item->data, item->size);
+	if (!impl) {
+		conf->state = NWIF_IFACE_CONF_FAIL_STATE;
+		return NULL;
+	}
+
+	conf = nwif_iface_conf_alloc(impl->data_size);
+	if (!conf)
+		return NULL;
+
+	conf->state = NWIF_IFACE_CONF_CLEAN_STATE;
+	conf->id = id;
+	conf->table = table;
+	memcpy(conf->data, item->data, impl->data_size);
+
+	return conf;
+}
+
+struct nwif_iface_conf *
+nwif_iface_conf_create_byid(const struct kvs_table *table,
+                            const struct kvs_xact  *xact,
+                            uint64_t                id)
+{
+	struct kvs_chunk item;
+	int              err;
+
+	err = nwif_iface_conf_get_byid(table, xact, id, &item);
+	if (err) {
+		errno = -err;
+		return NULL;
+	}
+
+	return nwif_iface_conf_create_from_rec(table, id, &item);
+}
+
+struct nwif_iface_conf *
+nwif_iface_conf_create_byname(const struct kvs_table *table,
+                              const struct kvs_xact  *xact,
+                              const char             *name,
+                              size_t                  len)
+{
+	uint64_t         id;
+	struct kvs_chunk item;
+	int              err;
+
+	err = nwif_iface_conf_get_byname(table, xact, name, len, &id, &item);
+	if (err) {
+		errno = -err;
+		return NULL;
+	}
+
+	return nwif_iface_conf_create_from_rec(table, id, &item);
+}
+
+/******************************************************************************
+ * Interface configuration handling
+ ******************************************************************************/
+
+const char *
+nwif_iface_conf_get_name(const struct nwif_iface_conf *conf)
+{
+	nwif_iface_conf_assert(conf);
+	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
+
+	if (!nwif_iface_conf_has_attr(conf, NWIF_NAME_ATTR))
+		return NULL;
+
+	return conf->data[0].name;
+}
+
+void
+nwif_iface_conf_set_name(struct nwif_iface_conf *conf,
+                         const char             *name,
+                         size_t                  len)
+{
+	nwif_iface_conf_assert(conf);
+	nwif_assert(unet_check_iface_name(name) == (ssize_t)len);
+
+	if (nwif_iface_conf_has_attr(conf, NWIF_NAME_ATTR) &&
+	    !strncmp(conf->data[0].name, name, sizeof(conf->data[0].name)))
+		return;
+
+	memcpy(conf->data[0].name, name, len);
+	conf->data[0].name[len] = '\0';
+
+	nwif_iface_conf_set_attr(conf, NWIF_NAME_ATTR);
+}
+
+void
+nwif_iface_conf_clear_name(struct nwif_iface_conf *conf)
+{
+	nwif_iface_conf_assert(conf);
+	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
+
+	nwif_iface_conf_clear_attr(conf, NWIF_NAME_ATTR);
+}
+
+void
+nwif_iface_conf_get_oper_state(const struct nwif_iface_conf *conf,
+                               uint8_t                      *oper_state)
+{
+	nwif_iface_conf_assert(conf);
+	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
+	nwif_assert(oper_state);
+
+	if (nwif_iface_conf_has_attr(conf, NWIF_OPER_STATE_ATTR))
+		*oper_state = conf->data[0].oper_state;
 	else
-		kvs_autorec_close(&table->data);
+		*oper_state = IF_OPER_DOWN;
+}
+
+void
+nwif_iface_conf_set_oper_state(struct nwif_iface_conf *conf, uint8_t oper_state)
+{
+	nwif_iface_conf_assert(conf);
+	nwif_assert(nwif_iface_oper_state_isok(oper_state));
+
+	if (nwif_iface_conf_has_attr(conf, NWIF_OPER_STATE_ATTR) &&
+	    (conf->data[0].oper_state == oper_state))
+		return;
+
+	conf->data[0].oper_state = oper_state;
+
+	nwif_iface_conf_set_attr(conf, NWIF_OPER_STATE_ATTR);
+}
+
+void
+nwif_iface_conf_clear_oper_state(struct nwif_iface_conf *conf)
+{
+	nwif_iface_conf_assert(conf);
+	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
+
+	nwif_iface_conf_clear_attr(conf, NWIF_OPER_STATE_ATTR);
+}
+
+int
+nwif_iface_conf_get_mtu(const struct nwif_iface_conf *conf, uint32_t *mtu)
+{
+	nwif_iface_conf_assert(conf);
+	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
+	nwif_assert(mtu);
+
+	if (!nwif_iface_conf_has_attr(conf, NWIF_MTU_ATTR))
+		return -ENODATA;
+
+	*mtu = conf->data[0].mtu;
+
+	return 0;
+}
+
+void
+nwif_iface_conf_set_mtu(struct nwif_iface_conf *conf, uint32_t mtu)
+{
+	nwif_iface_conf_assert(conf);
+	nwif_assert(unet_mtu_isok(mtu));
+
+	if (nwif_iface_conf_has_attr(conf, NWIF_MTU_ATTR) &&
+	    (conf->data[0].mtu == mtu))
+		return;
+
+	conf->data[0].mtu = mtu;
+
+	nwif_iface_conf_set_attr(conf, NWIF_MTU_ATTR);
+}
+
+void
+nwif_iface_conf_clear_mtu(struct nwif_iface_conf *conf)
+{
+	nwif_iface_conf_assert(conf);
+	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
+
+	nwif_iface_conf_clear_attr(conf, NWIF_MTU_ATTR);
+}
+
+int
+nwif_iface_conf_reload(struct nwif_iface_conf *conf,
+                       const struct kvs_xact  *xact)
+{
+	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
+
+	struct kvs_chunk                   item;
+	const struct nwif_iface_conf_impl *impl;
+	int                                err;
+
+	err = nwif_iface_conf_get_byid(conf->table, xact, conf->id, &item);
+	if (err)
+		return err;
+
+	impl = nwif_iface_conf_check_data(conf->id, item.data, item.size);
+	if (!impl) {
+		conf->state = NWIF_IFACE_CONF_FAIL_STATE;
+		return -errno;
+	}
+
+	nwif_assert(conf->data[0].type ==
+	            ((struct nwif_iface_conf_data *)item.data)->type);
+
+	conf->state = NWIF_IFACE_CONF_CLEAN_STATE;
+	memcpy(conf->data, item.data, impl->data_size);
+
+	return 0;
+}
+
+int
+nwif_iface_conf_del(struct nwif_iface_conf *conf, const struct kvs_xact *xact)
+{
+	kvs_assert(conf);
+
+	int ret;
+
+	switch (conf->state) {
+	case NWIF_IFACE_CONF_CLEAN_STATE:
+	case NWIF_IFACE_CONF_DIRTY_STATE:
+		break;
+
+	case NWIF_IFACE_CONF_EMPTY_STATE:
+	case NWIF_IFACE_CONF_FAIL_STATE:
+	default:
+		nwif_assert(0);
+	}
+
+	nwif_iface_conf_assert_data(conf->data);
+
+	ret = nwif_iface_conf_del_byid(conf->table, xact, conf->id);
+
+	conf->state = NWIF_IFACE_CONF_FAIL_STATE;
+	conf->id = 0;
 
 	return ret;
+}
+
+int
+nwif_iface_conf_save(struct nwif_iface_conf *conf, const struct kvs_xact *xact)
+{
+	kvs_assert(conf);
+
+	int err;
+
+	switch (conf->state) {
+	case NWIF_IFACE_CONF_CLEAN_STATE:
+		return 0;
+
+	case NWIF_IFACE_CONF_DIRTY_STATE:
+		break;
+
+	case NWIF_IFACE_CONF_EMPTY_STATE:
+	case NWIF_IFACE_CONF_FAIL_STATE:
+	default:
+		nwif_assert(0);
+	}
+
+	err = nwif_iface_conf_save_byid(conf->table,
+	                                xact,
+	                                &conf->id,
+	                                conf->data);
+
+	conf->state = !err ? NWIF_IFACE_CONF_CLEAN_STATE :
+	                     NWIF_IFACE_CONF_FAIL_STATE;
+
+	return err;
+}
+
+void
+nwif_iface_conf_init(struct nwif_iface_conf *conf,
+                     enum nwif_iface_type    type,
+                     const struct kvs_table *table)
+{
+	nwif_assert(conf);
+	nwif_assert(type >= 0);
+	nwif_assert(type < NWIF_IFACE_TYPE_NR);
+	kvs_table_assert(table);
+
+	conf->state = NWIF_IFACE_CONF_EMPTY_STATE;
+	conf->id = 0;
+	conf->table = table;
+	conf->data[0].type = type;
+	conf->data[0].attr_mask = 0U;
 }

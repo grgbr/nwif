@@ -1,10 +1,61 @@
-#include "common.h"
-#include <nwif/conf.h>
-#include <stdlib.h>
-#include <sys/stat.h>
+#include "conf_priv.h"
+#include "iface_priv.h"
+#include "addr_priv.h"
 
 /* Restrict maximum transaction log file size to 512kB. */
 #define NWIF_CONF_MAX_LOG_SIZE (512 << 10)
+
+int
+nwif_conf_begin_xact(const struct kvs_repo *repo,
+                     const struct kvs_xact *parent,
+                     struct kvs_xact       *xact,
+                     unsigned int           flags)
+{
+	nwif_assert(repo);
+
+	return kvs_begin_xact(&repo->depot, parent, xact, flags);
+}
+
+static const struct kvs_repo_desc nwif_conf_desc = {
+	.tbl_nr = NWIF_CONF_TID_NR,
+	.tables = {
+		[NWIF_CONF_IFACE_TID] = &nwif_iface_conf_desc,
+#if 0
+		[NWIF_CONF_ADDR_TID]  = &nwif_addr_conf_desc
+#endif
+	}
+};
+
+int
+nwif_conf_open(struct kvs_repo *repo,
+               const char      *path,
+               unsigned int     flags,
+               mode_t           mode)
+{
+	return kvs_repo_open(repo,
+	                     path,
+	                     NWIF_CONF_MAX_LOG_SIZE,
+	                     flags | KVS_DEPOT_PRIV,
+	                     mode);
+}
+
+int
+nwif_conf_close(const struct kvs_repo *repo)
+{
+	return kvs_repo_close(repo);
+}
+
+struct kvs_repo *
+nwif_conf_create(void)
+{
+	return kvs_repo_create(&nwif_conf_desc);
+}
+
+void
+nwif_conf_destroy(struct kvs_repo *repo)
+{
+	kvs_repo_destroy(repo);
+}
 
 const char *
 nwif_conf_strerror(int err)
@@ -12,14 +63,7 @@ nwif_conf_strerror(int err)
 	return kvs_strerror(err);
 }
 
-int
-nwif_conf_begin_xact(const struct nwif_conf_repo *repo,
-                     const struct kvs_xact       *parent,
-                     struct kvs_xact             *xact,
-                     unsigned int                 flags)
-{
-	return kvs_begin_xact(&repo->depot, parent, xact, flags);
-}
+#if 0
 
 int
 nwif_conf_commit_xact(const struct kvs_xact *xact)
@@ -101,3 +145,5 @@ nwif_conf_alloc(void)
 {
 	return malloc(sizeof(struct nwif_conf_repo));
 }
+
+#endif

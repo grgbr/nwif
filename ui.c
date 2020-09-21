@@ -1,13 +1,10 @@
-#include "nwif/config.h"
 #include "ui.h"
-#include <nwif/conf.h>
-#include <stdio.h>
-#include <utils/net.h>
+#include "iface_priv.h"
 #include <linux/if.h>
-#include <netinet/ether.h>
 
 #if defined(CONFIG_NWIF_ETHER)
-#include <nwif/ether.h>
+#include "ether_priv.h"
+#include <netinet/ether.h>
 #endif /* defined(CONFIG_NWIF_ETHER) */
 
 const char *
