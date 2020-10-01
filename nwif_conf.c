@@ -8,8 +8,6 @@
 
 #include <sys/stat.h>
 
-#define NWIF_CONF_DIR_PATH CONFIG_NWIF_LOCALSTATEDIR
-
 #define nwif_conf_clui_err(_parser, _error, _format, ...) \
 	clui_err(_parser, \
 	         _format ": %s (%d).", \
@@ -30,7 +28,7 @@ typedef int (nwif_conf_clui_exec_fn)
 struct nwif_iface_conf_attrs {
 	unsigned int       mask;
 	const char        *name;
-	uint8_t            oper_state;
+	uint8_t            admin_state;
 	uint32_t           mtu;
 	char              *syspath;
 	struct ether_addr  hwaddr;
@@ -158,7 +156,7 @@ nwif_conf_clui_open_session(struct nwif_conf_clui_session *session,
 	return 0;
 
 free:
-	free(session->repo);
+	nwif_conf_destroy(session->repo);
 
 	return err;
 }
@@ -206,7 +204,7 @@ enum nwif_conf_clui_iface_col_id {
 	NWIF_CONF_CLUI_IFACE_ID_CID,
 	NWIF_CONF_CLUI_IFACE_TYPE_CID,
 	NWIF_CONF_CLUI_IFACE_NAME_CID,
-	NWIF_CONF_CLUI_IFACE_OPER_STATE_CID,
+	NWIF_CONF_CLUI_IFACE_ADMIN_STATE_CID,
 	NWIF_CONF_CLUI_IFACE_MTU_CID,
 	NWIF_CONF_CLUI_IFACE_SYSPATH_CID,
 	NWIF_CONF_CLUI_IFACE_HWADDR_CID,
@@ -250,10 +248,10 @@ static const struct clui_kword_parm nwif_conf_clui_iface_name_kword_parm = {
 };
 
 static int
-nwif_conf_clui_parse_iface_oper_state_parm(const struct clui_cmd *cmd,
-                                           struct clui_parser    *parser,
-                                           const char            *arg,
-                                           void                  *ctx)
+nwif_conf_clui_parse_iface_admin_state_parm(const struct clui_cmd *cmd,
+                                            struct clui_parser    *parser,
+                                            const char            *arg,
+                                            void                  *ctx)
 {
 	nwif_ui_assert(cmd);
 	nwif_ui_assert(parser);
@@ -265,10 +263,10 @@ nwif_conf_clui_parse_iface_oper_state_parm(const struct clui_cmd *cmd,
 	struct nwif_iface_conf_attrs *attrs = &((struct nwif_conf_clui_ctx *)
 	                                        ctx)->iface_attrs;
 
-	err = nwif_ui_parse_oper_state(arg, &attrs->oper_state);
+	err = nwif_ui_parse_admin_state(arg, &attrs->admin_state);
 	switch (err) {
 	case 0:
-		attrs->mask |= NWIF_OPER_STATE_ATTR;
+		attrs->mask |= NWIF_ADMIN_STATE_ATTR;
 		return 0;
 
 	case -ENOENT:
@@ -294,9 +292,9 @@ nwif_conf_clui_parse_iface_oper_state_parm(const struct clui_cmd *cmd,
 }
 
 static const struct clui_kword_parm
-nwif_conf_clui_iface_oper_state_kword_parm = {
-	.label = "oper",
-	.parse = nwif_conf_clui_parse_iface_oper_state_parm
+nwif_conf_clui_iface_admin_state_kword_parm = {
+	.label = "state",
+	.parse = nwif_conf_clui_parse_iface_admin_state_parm
 };
 
 static int
@@ -322,7 +320,7 @@ nwif_conf_clui_parse_iface_mtu_parm(const struct clui_cmd *cmd,
 
 	clui_err(parser,
 	         "invalid interface mtu '%.5s': "
-	         "[0:" USTRINGIFY(IP_MAXPACKET) "] integer expected.",
+	         "[0:" USTRINGIFY(ETH_MAX_MTU) "] integer expected.",
 	         arg);
 
 	return err;
@@ -456,9 +454,9 @@ static const struct clui_switch_parm nwif_conf_clui_iface_name_switch_parm = {
 };
 
 static int
-nwif_conf_clui_parse_iface_oper_state_switch(const struct clui_cmd *cmd,
-                                             struct clui_parser    *parser,
-                                             void                  *ctx)
+nwif_conf_clui_parse_iface_admin_state_switch(const struct clui_cmd *cmd,
+                                              struct clui_parser    *parser,
+                                              void                  *ctx)
 {
 	nwif_ui_assert(cmd);
 	nwif_ui_assert(parser);
@@ -467,15 +465,15 @@ nwif_conf_clui_parse_iface_oper_state_switch(const struct clui_cmd *cmd,
 	struct nwif_iface_conf_attrs *attrs = &((struct nwif_conf_clui_ctx *)
 	                                        ctx)->iface_attrs;
 
-	attrs->mask |= NWIF_OPER_STATE_ATTR;
+	attrs->mask |= NWIF_ADMIN_STATE_ATTR;
 
 	return 0;
 }
 
 static const struct clui_switch_parm
-nwif_conf_clui_iface_oper_state_switch_parm = {
-	.label = "oper",
-	.parse = nwif_conf_clui_parse_iface_oper_state_switch
+nwif_conf_clui_iface_admin_state_switch_parm = {
+	.label = "state",
+	.parse = nwif_conf_clui_parse_iface_admin_state_switch
 };
 
 static int
@@ -546,7 +544,7 @@ static const struct clui_switch_parm nwif_conf_clui_iface_hwaddr_switch_parm = {
 	"\n" \
 
 #define NWIF_CONF_CLUI_IFACE_SET_ETHER_WITH \
-	"    ETHER_SET_SPEC := [SYSPATH_SPEC] [NAME_SPEC] [OPER_SPEC] [MTU_SPEC] [HWADDR_SPEC]\n"
+	"    ETHER_SET_SPEC := [SYSPATH_SPEC] [NAME_SPEC] [STATE_SPEC] [MTU_SPEC] [HWADDR_SPEC]\n"
 
 #define NWIF_CONF_CLUI_IFACE_CLEAR_ETHER_SYNOPSIS \
 	"    %1$s iface clear <IFACE_ID> <ETHER_CLEAR_SPEC>\n" \
@@ -560,7 +558,7 @@ static const struct clui_switch_parm nwif_conf_clui_iface_hwaddr_switch_parm = {
 
 #define NWIF_CONF_CLUI_NEW_ETHER_HELP \
 	"Synopsis:\n" \
-	"    %1$s iface new ether <SYSPATH> [NAME_SPEC] [OPER_SPEC] [MTU_SPEC] [HWADDR_SPEC]\n" \
+	"    %1$s iface new ether <SYSPATH> [NAME_SPEC] [STATE_SPEC] [MTU_SPEC] [HWADDR_SPEC]\n" \
 	"    Create a new ethernet interface.\n" \
 	"\n" \
 	"    %1$s iface new ether help\n" \
@@ -568,23 +566,23 @@ static const struct clui_switch_parm nwif_conf_clui_iface_hwaddr_switch_parm = {
 	"\n" \
 	"With:\n" \
 	"    NAME_SPEC   := name <IFACE_NAME>\n" \
-	"    OPER_SPEC   := oper <IFACE_OPER>\n" \
-	"    IFACE_OPER  := up|down\n" \
+	"    STATE_SPEC  := state <IFACE_STATE>\n" \
+	"    IFACE_STATE := up|down\n" \
 	"    MTU_SPEC    := mtu <IFACE_MTU>\n" \
 	"    HWADDR_SPEC := hwaddr <IFACE_HWADDR>\n" \
 	"\n" \
 	"Where:\n" \
 	"    <SYSPATH>      -- sysfs network interface path, a non empty string.\n" \
 	"    <IFACE_NAME>   -- interface name, a non empty string.\n" \
-	"    <IFACE_OPER>   -- interface required operational state.\n" \
+	"    <IFACE_STATE>  -- interface administrative state.\n" \
 	"    <IFACE_MTU>    -- maximum transfer unit in bytes,\n" \
-	"                      integer [0:" USTRINGIFY(IP_MAXPACKET) "].\n" \
+	"                      integer [0:" USTRINGIFY(ETH_MAX_MTU) "].\n" \
 	"    <IFACE_HWADDR> -- unicast 48-bit MAC address, standard hexadecimal\n" \
 	"                      digits and colons notation.\n"
 
 static const struct clui_kword_parm * const nwif_ether_conf_kword_parms[] = {
 	&nwif_conf_clui_iface_name_kword_parm,
-	&nwif_conf_clui_iface_oper_state_kword_parm,
+	&nwif_conf_clui_iface_admin_state_kword_parm,
 	&nwif_conf_clui_iface_mtu_kword_parm,
 	&nwif_conf_clui_iface_hwaddr_kword_parm
 };
@@ -598,7 +596,7 @@ nwif_conf_clui_fill_ether(struct nwif_ether_conf             *conf,
 
 	struct nwif_iface_conf *iface = nwif_ether_conf_to_iface(conf);
 
-	if (attrs->mask & ~(NWIF_NAME_ATTR | NWIF_OPER_STATE_ATTR |
+	if (attrs->mask & ~(NWIF_NAME_ATTR | NWIF_ADMIN_STATE_ATTR |
 	                    NWIF_MTU_ATTR | NWIF_SYSPATH_ATTR |
 	                    NWIF_HWADDR_ATTR))
 		return -ENOTSUP;
@@ -608,8 +606,8 @@ nwif_conf_clui_fill_ether(struct nwif_ether_conf             *conf,
 		                         attrs->name,
 		                         strlen(attrs->name));
 
-	if (attrs->mask & NWIF_OPER_STATE_ATTR)
-		nwif_iface_conf_set_oper_state(iface, attrs->oper_state);
+	if (attrs->mask & NWIF_ADMIN_STATE_ATTR)
+		nwif_iface_conf_set_admin_state(iface, attrs->admin_state);
 
 	if (attrs->mask & NWIF_MTU_ATTR)
 		nwif_iface_conf_set_mtu(iface, attrs->mtu);
@@ -634,15 +632,15 @@ nwif_conf_clui_clear_ether(struct nwif_ether_conf             *conf,
 
 	struct nwif_iface_conf *iface = nwif_ether_conf_to_iface(conf);
 
-	if (attrs->mask & ~(NWIF_NAME_ATTR | NWIF_OPER_STATE_ATTR |
+	if (attrs->mask & ~(NWIF_NAME_ATTR | NWIF_ADMIN_STATE_ATTR |
 	                    NWIF_MTU_ATTR | NWIF_HWADDR_ATTR))
 		return -ENOTSUP;
 
 	if (attrs->mask & NWIF_NAME_ATTR)
 		nwif_iface_conf_clear_name(iface);
 
-	if (attrs->mask & NWIF_OPER_STATE_ATTR)
-		nwif_iface_conf_clear_oper_state(iface);
+	if (attrs->mask & NWIF_ADMIN_STATE_ATTR)
+		nwif_iface_conf_clear_admin_state(iface);
 
 	if (attrs->mask & NWIF_MTU_ATTR)
 		nwif_iface_conf_clear_mtu(iface);
@@ -861,8 +859,8 @@ static const struct clui_cmd nwif_conf_clui_iface_new_cmd = {
 	NWIF_CONF_CLUI_IFACE_SET_ETHER_WITH \
 	"    SYSPATH_SPEC   := syspath <SYSPATH>\n" \
 	"    NAME_SPEC      := name <IFACE_NAME>\n" \
-	"    OPER_SPEC      := oper <IFACE_OPER>\n" \
-	"    IFACE_OPER     := up|down\n" \
+	"    STATE_SPEC     := state <IFACE_STATE>\n" \
+	"    IFACE_STATE    := up|down\n" \
 	"    MTU_SPEC       := mtu <IFACE_MTU>\n" \
 	"    HWADDR_SPEC    := hwaddr <IFACE_HWADDR>\n" \
 	"\n" \
@@ -871,16 +869,16 @@ static const struct clui_cmd nwif_conf_clui_iface_new_cmd = {
 	NWIF_CONF_CLUI_IFACE_NAME_WHERE \
 	"    <SYSPATH>      -- sysfs network interface path, a non empty string.\n" \
 	"    <IFACE_NAME>   -- interface name, a non empty string.\n" \
-	"    <IFACE_OPER>   -- interface required operational state.\n" \
+	"    <IFACE_STATE>  -- interface administrative state.\n" \
 	"    <IFACE_MTU>    -- maximum transfer unit in bytes,\n" \
-	"                      integer [0:" USTRINGIFY(IP_MAXPACKET) "].\n" \
+	"                      integer [0:" USTRINGIFY(ETH_MAX_MTU) "].\n" \
 	"    <IFACE_HWADDR> -- unicast 48-bit MAC address, standard hexadecimal\n" \
 	"                      digits and colons notation.\n"
 
 static const struct clui_kword_parm * const nwif_iface_conf_kword_parms[] = {
 	&nwif_conf_clui_iface_syspath_kword_parm,
 	&nwif_conf_clui_iface_name_kword_parm,
-	&nwif_conf_clui_iface_oper_state_kword_parm,
+	&nwif_conf_clui_iface_admin_state_kword_parm,
 	&nwif_conf_clui_iface_mtu_kword_parm,
 	&nwif_conf_clui_iface_hwaddr_kword_parm
 };
@@ -1141,7 +1139,7 @@ static const struct clui_cmd nwif_conf_clui_iface_set_cmd = {
 
 static const struct clui_switch_parm * const nwif_iface_conf_switch_parms[] = {
 	&nwif_conf_clui_iface_name_switch_parm,
-	&nwif_conf_clui_iface_oper_state_switch_parm,
+	&nwif_conf_clui_iface_admin_state_switch_parm,
 	&nwif_conf_clui_iface_mtu_switch_parm,
 	&nwif_conf_clui_iface_hwaddr_switch_parm
 };
@@ -2076,7 +2074,7 @@ int
 main(int argc, char * const argv[])
 {
 	struct clui_parser        parser;
-	struct nwif_conf_clui_ctx ctx = { 0 };
+	struct nwif_conf_clui_ctx ctx = { 0, };
 	int                       err;
 
 	err = clui_init(&parser,
@@ -2087,8 +2085,7 @@ main(int argc, char * const argv[])
 	if (err)
 		return EXIT_FAILURE;
 
-	memset(&ctx, 0, sizeof(ctx));
-	ctx.path = NWIF_CONF_DIR_PATH;
+	ctx.path = CONFIG_NWIF_LOCALSTATEDIR;
 
 	err = clui_parse(&parser, argc, argv, &ctx);
 	if (err)

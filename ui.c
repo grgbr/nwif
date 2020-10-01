@@ -50,45 +50,34 @@ nwif_ui_parse_iface_name(const char *arg)
 	return unet_check_iface_name(arg);
 }
 
-static const char *nwif_ui_oper_state_labels[] = {
-	[IF_OPER_UNKNOWN]        = "unknown",
-	[IF_OPER_NOTPRESENT]     = "absent",
-	[IF_OPER_DOWN]           = "down",
-	[IF_OPER_LOWERLAYERDOWN] = "lowerdown",
-	[IF_OPER_TESTING]        = "testing",
-	[IF_OPER_DORMANT]        = "dormant",
-	[IF_OPER_UP]             = "up"
-};
-
 int
-nwif_ui_parse_oper_state(const char *arg, uint8_t *oper)
+nwif_ui_parse_admin_state(const char *arg, uint8_t *state)
 {
 	nwif_ui_assert(arg);
 
-	unsigned int o;
-
-	for (o = 0; o < array_nr(nwif_ui_oper_state_labels); o++)
-		if (!strcmp(arg, nwif_ui_oper_state_labels[o]))
-			break;
-
-	if (o == array_nr(nwif_ui_oper_state_labels))
-		return -ENOENT;
-
-	if (!nwif_iface_oper_state_isok(o))
+	if (!strcmp(arg, "up"))
+		*state = IF_OPER_UP;
+	else if (!strcmp(arg, "down"))
+		*state = IF_OPER_DOWN;
+	else
 		return -EPERM;
-
-	*oper = (uint8_t)o;
 
 	return 0;
 }
 
 const char *
-nwif_ui_get_oper_state_label(uint8_t oper)
+nwif_ui_get_admin_state_label(uint8_t state)
 {
-	if (oper < array_nr(nwif_ui_oper_state_labels))
-		return nwif_ui_oper_state_labels[oper];
+	switch (state) {
+	case IF_OPER_UP:
+		return "up";
 
-	return nwif_ui_oper_state_labels[IF_OPER_UNKNOWN];
+	case IF_OPER_DOWN:
+		return "down";
+
+	default:
+		return "unknown";
+	}
 }
 
 int
@@ -103,7 +92,7 @@ nwif_ui_parse_mtu(const char *arg, uint32_t *mtu)
 	if (err)
 		return err;
 
-	if (!unet_mtu_isok(*mtu))
+	if (!unet_iface_mtu_isok(*mtu))
 		return -ERANGE;
 
 	return 0;
@@ -140,7 +129,7 @@ enum nwif_ui_iface_conf_col_id {
 	NWIF_UI_IFACE_CONF_ID_CID,
 	NWIF_UI_IFACE_CONF_TYPE_CID,
 	NWIF_UI_IFACE_CONF_NAME_CID,
-	NWIF_UI_IFACE_CONF_OPER_STATE_CID,
+	NWIF_UI_IFACE_CONF_ADMIN_STATE_CID,
 	NWIF_UI_IFACE_CONF_MTU_CID,
 	NWIF_UI_IFACE_CONF_SYSPATH_CID,
 	NWIF_UI_IFACE_CONF_HWADDR_CID,
@@ -170,8 +159,8 @@ nwif_ui_iface_conf_cols[NWIF_UI_IFACE_CONF_CID_NR] = {
 		.whint = 1.0,
 		.flags = 0
 	},
-	[NWIF_UI_IFACE_CONF_OPER_STATE_CID] = {
-		.label = "OPER",
+	[NWIF_UI_IFACE_CONF_ADMIN_STATE_CID] = {
+		.label = "STATE",
 		.whint = 1.0,
 		.flags = 0
 	},
@@ -251,7 +240,7 @@ nwif_ui_render_iface_conf_table(struct libscols_table        *table,
 	int                           err;
 	enum nwif_iface_type          type;
 	const char                   *name;
-	uint8_t                       oper;
+	uint8_t                       state;
 	uint32_t                      mtu;
 
 	line = scols_table_new_line(table, NULL);
@@ -282,10 +271,10 @@ nwif_ui_render_iface_conf_table(struct libscols_table        *table,
 	}
 
 	/* Render optional operational state. */
-	nwif_iface_conf_get_oper_state(iface, &oper);
+	nwif_iface_conf_get_admin_state(iface, &state);
 	err = scols_line_set_data(line,
-	                          NWIF_UI_IFACE_CONF_OPER_STATE_CID,
-	                          nwif_ui_get_oper_state_label(oper));
+	                          NWIF_UI_IFACE_CONF_ADMIN_STATE_CID,
+	                          nwif_ui_get_admin_state_label(state));
 	if (err)
 		return err;
 

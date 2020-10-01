@@ -1,7 +1,10 @@
 #include "iface_priv.h"
+#include "conf_priv.h"
+#include <utils/net.h>
 #include <utils/string.h>
 #include <glob.h>
 #include <linux/if.h>
+#include <linux/rtnetlink.h>
 
 #define NWIF_IFACE_CONF_BASENAME       "iface"
 #define NWIF_SYSNETDEV_IFINDEX_PATTERN "net/*/ifindex"
@@ -18,7 +21,9 @@ nwif_iface_probe_sysid(const char *syspath)
 	int     ret;
 
 	if (asprintf(&pat,
-	             UNET_IFACE_SYSPATH_PREFIX "/%s/" NWIF_SYSNETDEV_IFINDEX_PATTERN,
+	             UNET_IFACE_SYSPATH_PREFIX
+	             "/%s/"
+	             NWIF_SYSNETDEV_IFINDEX_PATTERN,
 	             syspath) < 0)
 		return -errno;
 
@@ -61,23 +66,6 @@ free:
 	free(pat);
 
 	return ret;
-}
-
-/******************************************************************************
- * Interface attribute related helpers
- ******************************************************************************/
-
-bool
-nwif_iface_oper_state_isok(uint8_t oper_state)
-{
-	switch (oper_state) {
-	case IF_OPER_UP:
-	case IF_OPER_DOWN:
-		return true;
-
-	default:
-		return false;
-	}
 }
 
 /******************************************************************************
@@ -365,6 +353,29 @@ nwif_iface_conf_get_byname(const struct kvs_table *table,
 }
 
 static int
+nwif_iface_conf_get_bysyspath(const struct kvs_table *table,
+                              const struct kvs_xact  *xact,
+                              const char             *syspath,
+                              size_t                  len,
+                              uint64_t               *id,
+                              struct kvs_chunk       *item)
+{
+	nwif_assert(unet_check_iface_syspath(syspath) == (ssize_t)len);
+
+	const struct kvs_chunk  field = {
+		.size = len,
+		.data = syspath
+	};
+
+	return kvs_autorec_get_byfield(
+		kvs_table_get_indx_store(table, NWIF_IFACE_CONF_SYSPATH_IID),
+		xact,
+		&field,
+		id,
+		item);
+}
+
+static int
 nwif_iface_conf_save_byid(const struct kvs_table            *table,
                           const struct kvs_xact             *xact,
                           uint64_t                          *id,
@@ -508,6 +519,25 @@ nwif_iface_conf_create_byname(const struct kvs_table *table,
 	return nwif_iface_conf_create_from_rec(table, id, &item);
 }
 
+struct nwif_iface_conf *
+nwif_iface_conf_create_bysyspath(const struct kvs_table *table,
+                                 const struct kvs_xact  *xact,
+                                 const char             *name,
+                                 size_t                  len)
+{
+	uint64_t         id;
+	struct kvs_chunk item;
+	int              err;
+
+	err = nwif_iface_conf_get_bysyspath(table, xact, name, len, &id, &item);
+	if (err) {
+		errno = -err;
+		return NULL;
+	}
+
+	return nwif_iface_conf_create_from_rec(table, id, &item);
+}
+
 /******************************************************************************
  * Interface configuration handling
  ******************************************************************************/
@@ -552,41 +582,41 @@ nwif_iface_conf_clear_name(struct nwif_iface_conf *conf)
 }
 
 void
-nwif_iface_conf_get_oper_state(const struct nwif_iface_conf *conf,
-                               uint8_t                      *oper_state)
+nwif_iface_conf_get_admin_state(const struct nwif_iface_conf *conf,
+                                uint8_t                      *state)
 {
 	nwif_iface_conf_assert(conf);
 	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
-	nwif_assert(oper_state);
+	nwif_assert(state);
 
-	if (nwif_iface_conf_has_attr(conf, NWIF_OPER_STATE_ATTR))
-		*oper_state = conf->data[0].oper_state;
+	if (nwif_iface_conf_has_attr(conf, NWIF_ADMIN_STATE_ATTR))
+		*state = conf->data[0].admin_state;
 	else
-		*oper_state = IF_OPER_DOWN;
+		*state = IF_OPER_DOWN;
 }
 
 void
-nwif_iface_conf_set_oper_state(struct nwif_iface_conf *conf, uint8_t oper_state)
+nwif_iface_conf_set_admin_state(struct nwif_iface_conf *conf, uint8_t state)
 {
 	nwif_iface_conf_assert(conf);
-	nwif_assert(nwif_iface_oper_state_isok(oper_state));
+	nwif_assert(unet_iface_admin_state_isok(state));
 
-	if (nwif_iface_conf_has_attr(conf, NWIF_OPER_STATE_ATTR) &&
-	    (conf->data[0].oper_state == oper_state))
+	if (nwif_iface_conf_has_attr(conf, NWIF_ADMIN_STATE_ATTR) &&
+	    (conf->data[0].admin_state == state))
 		return;
 
-	conf->data[0].oper_state = oper_state;
+	conf->data[0].admin_state = state;
 
-	nwif_iface_conf_set_attr(conf, NWIF_OPER_STATE_ATTR);
+	nwif_iface_conf_set_attr(conf, NWIF_ADMIN_STATE_ATTR);
 }
 
 void
-nwif_iface_conf_clear_oper_state(struct nwif_iface_conf *conf)
+nwif_iface_conf_clear_admin_state(struct nwif_iface_conf *conf)
 {
 	nwif_iface_conf_assert(conf);
 	nwif_assert(conf->state != NWIF_IFACE_CONF_EMPTY_STATE);
 
-	nwif_iface_conf_clear_attr(conf, NWIF_OPER_STATE_ATTR);
+	nwif_iface_conf_clear_attr(conf, NWIF_ADMIN_STATE_ATTR);
 }
 
 int
@@ -608,7 +638,7 @@ void
 nwif_iface_conf_set_mtu(struct nwif_iface_conf *conf, uint32_t mtu)
 {
 	nwif_iface_conf_assert(conf);
-	nwif_assert(unet_mtu_isok(mtu));
+	nwif_assert(unet_iface_mtu_isok(mtu));
 
 	if (nwif_iface_conf_has_attr(conf, NWIF_MTU_ATTR) &&
 	    (conf->data[0].mtu == mtu))
@@ -660,7 +690,7 @@ nwif_iface_conf_reload(struct nwif_iface_conf *conf,
 int
 nwif_iface_conf_del(struct nwif_iface_conf *conf, const struct kvs_xact *xact)
 {
-	kvs_assert(conf);
+	nwif_assert(conf);
 
 	int ret;
 
@@ -688,7 +718,7 @@ nwif_iface_conf_del(struct nwif_iface_conf *conf, const struct kvs_xact *xact)
 int
 nwif_iface_conf_save(struct nwif_iface_conf *conf, const struct kvs_xact *xact)
 {
-	kvs_assert(conf);
+	nwif_assert(conf);
 
 	int err;
 
@@ -731,4 +761,327 @@ nwif_iface_conf_init(struct nwif_iface_conf *conf,
 	conf->table = table;
 	conf->data[0].type = type;
 	conf->data[0].attr_mask = 0U;
+}
+
+/******************************************************************************
+ * Interface state handling
+ ******************************************************************************/
+
+extern const struct nwif_iface_state_impl nwif_loopback_state_impl;
+
+#if defined(CONFIG_NWIF_ETHER)
+
+extern const struct nwif_iface_state_impl nwif_ether_state_impl;
+#define NWIF_ETHER_STATE_IMPL (&nwif_ether_state_impl)
+
+#else  /* !defined(CONFIG_NWIF_ETHER) */
+
+#define NWIF_ETHER_STATE_IMPL (NULL)
+
+#endif /* defined(CONFIG_NWIF_ETHER) */
+
+static const struct nwif_iface_state_impl * const
+nwif_iface_state_impl_table[NWIF_IFACE_TYPE_NR] = {
+	[NWIF_LOOPBACK_IFACE_TYPE] = &nwif_loopback_state_impl,
+	[NWIF_ETHER_IFACE_TYPE]    = NWIF_ETHER_STATE_IMPL
+};
+
+static int
+nwif_iface_state_parse_ack(int status, const struct nlmsghdr *msg, void *data)
+{
+	nwif_assert(msg);
+	nwif_state_assert_sock((struct nwif_state_sock *)data);
+
+#warning implement iface content update ??
+
+	return (status == -ENODATA) ? 0 : status;
+}
+
+int
+nwif_iface_state_start_apply(struct nwif_iface_state      *iface,
+                             const struct nwif_iface_conf *conf)
+{
+	nwif_iface_state_assert(iface);
+	nwif_iface_conf_assert(conf);
+
+	const struct nwif_iface_state_impl *impl;
+	struct nwif_state_sock             *sock = iface->sock;
+	struct nlmsghdr                    *msg = sock->msg;
+	int                                 err;
+	const char                         *name;
+	uint8_t                             admin;
+	uint32_t                            mtu;
+	bool                                send = false;
+
+	impl = nwif_iface_state_impl_table[iface->type];
+	nlink_iface_setup_new(msg, &sock->nlink, impl->arp_type, iface->sysid);
+
+	name = nwif_iface_conf_get_name(conf);
+	if (name && strcmp(name, iface->name)) {
+		err = nlink_iface_setup_msg_name(msg, name, strlen(name));
+		if (err)
+			return err;
+		send = true;
+	}
+
+	nwif_iface_conf_get_admin_state(conf, &admin);
+	if (admin != iface->admin_state) {
+		err = nlink_iface_setup_msg_admin_state(msg, admin);
+		if (err)
+			return err;
+		send = true;
+	}
+
+	err = nwif_iface_conf_get_mtu(conf, &mtu);
+	nwif_assert(!err || (err == -ENODATA));
+	if (!err && (mtu != iface->mtu)) {
+		err = nlink_iface_setup_msg_mtu(msg, mtu);
+		if (err)
+			return err;
+		send = true;
+	}
+
+	err = impl->apply_conf(iface, msg, conf);
+	if (err) {
+		if (err != -ECANCELED)
+			return err;
+	}
+	else
+		send = true;
+
+	if (!send)
+		return 0;
+
+	return nwif_state_start_xfer(sock, msg, nwif_iface_state_parse_ack);
+}
+
+static int
+nwif_iface_state_fill(struct nwif_iface_state            *iface,
+                      const struct nwif_iface_state_impl *impl,
+                      const struct nlink_iface           *attrs)
+{
+	memcpy(iface->name, attrs->name, attrs->name_len);
+	iface->name[attrs->name_len] = '\0';
+	iface->admin_state = attrs->admin_state;
+	iface->oper_state = attrs->oper_state;
+	iface->carrier_state = attrs->carrier_state;
+	iface->mtu = attrs->mtu;
+
+	return impl->fill_attrs(iface, attrs);
+}
+
+int
+nwif_iface_state_update(struct nwif_iface_state  *iface,
+                        const struct nlink_iface *attrs)
+{
+	nwif_iface_state_assert(iface);
+	nwif_iface_state_assert_attrs(attrs);
+	nwif_assert(iface->sysid == attrs->index);
+	nwif_assert(iface->type == attrs->type);
+	nwif_assert(iface->type < array_nr(nwif_iface_state_impl_table));
+
+	const struct nwif_iface_state_impl *impl;
+
+	impl = nwif_iface_state_impl_table[iface->type];
+	nwif_assert(impl->probe_type(attrs));
+
+	return nwif_iface_state_fill(iface, impl, attrs);
+}
+
+struct nwif_iface_state *
+nwif_iface_state_create(struct nwif_state_sock   *sock,
+                        const struct nlink_iface *attrs)
+{
+	nwif_state_assert_sock(sock);
+	nwif_iface_state_assert_attrs(attrs);
+
+	int                                 err;
+	unsigned int                        i;
+	const struct nwif_iface_state_impl *impl;
+	struct nwif_iface_state            *iface;
+
+	for (i = 0; i < array_nr(nwif_iface_state_impl_table); i++) {
+		impl = nwif_iface_state_impl_table[i];
+
+		if (impl &&
+		    (impl->arp_type == attrs->type) &&
+		    impl->probe_type(attrs))
+			break;
+	}
+
+	if (i == array_nr(nwif_iface_state_impl_table)) {
+		errno = ENOTSUP;
+		return NULL;
+	}
+
+	iface = malloc(impl->size);
+	if (!iface)
+		return NULL;
+
+	nwif_iface_state_init(iface, attrs->index, i, sock);
+	err = nwif_iface_state_fill(iface, impl, attrs);
+	if (err)
+		goto free;
+
+	return iface;
+
+free:
+	free(iface);
+
+	errno = -err;
+	return NULL;
+}
+
+struct nwif_iface_state *
+nwif_iface_state_create_from_msg(struct nwif_state_sock *sock,
+                                 const struct nlmsghdr  *msg)
+{
+	nwif_assert(msg);
+	nwif_assert(msg->nlmsg_type == RTM_NEWLINK);
+
+	struct nlink_iface attrs;
+	int                err;
+
+	err = nwif_iface_state_parse_msg(msg, &attrs);
+	if (err) {
+		errno = -err;
+		return NULL;
+	}
+
+	return nwif_iface_state_create(sock, &attrs);
+}
+
+/******************************************************************************
+ * Interface cache handling
+ ******************************************************************************/
+
+static int
+nwif_iface_cache_compare_sysid(const struct pavl_node *node,
+                               const void             *key,
+                               const void             *data __unused)
+{
+	nwif_assert(node);
+	nwif_assert((int)key > 1);
+
+	const struct nwif_iface *iface = containerof(node,
+	                                             struct nwif_iface,
+	                                             sysid_node);
+
+	return nwif_iface_state_get_id(iface->state) - (int)key;
+}
+
+static void
+nwif_iface_cache_release(struct pavl_node *node, void *data __unused)
+{
+	nwif_assert(node);
+	
+	nwif_iface_destroy(containerof(node, struct nwif_iface, sysid_node));
+}
+
+void
+nwif_iface_cache_init(struct nwif_iface_cache *cache)
+{
+	nwif_assert(cache);
+
+	pavl_init_tree(&cache->sysid_avl,
+	               nwif_iface_cache_compare_sysid,
+	               nwif_iface_cache_release,
+	               NULL);
+}
+
+/******************************************************************************
+ * Top-level interface handling
+ ******************************************************************************/
+
+static ssize_t
+nwif_iface_probe_syspath(const char *name, char **syspath)
+{
+	nwif_assert(unet_check_iface_name(name) > 0);
+	nwif_assert(syspath);
+
+	char    *class;
+	ssize_t  len;
+
+	if (asprintf(&class, UNET_IFACE_CLASS_PREFIX "/%s", name) < 0)
+		return -errno;
+
+	len = unet_resolve_iface_syspath(class, syspath);
+
+	free(class);
+
+	return len;
+}
+
+int
+nwif_iface_load(struct nwif_iface     *iface,
+                const struct kvs_repo *conf,
+                const struct kvs_xact *xact)
+{
+	nwif_assert(iface);
+	nwif_assert(iface->state);
+	nwif_assert(conf);
+	nwif_assert(xact);
+
+	if (!iface->conf) {
+		char *syspath;
+		int   ret;
+
+		ret = nwif_iface_probe_syspath(
+				nwif_iface_state_get_name(iface->state),
+				&syspath);
+		if (ret < 0)
+			return ret;
+
+		iface->conf =
+			nwif_iface_conf_create_bysyspath(
+				nwif_conf_get_iface_table(conf),
+				xact,
+				syspath,
+				ret);
+
+		ret = -errno;
+		free(syspath);
+
+		return iface->conf ? 0 : ret;
+	}
+
+	return nwif_iface_conf_reload(iface->conf, xact);
+}
+
+struct nwif_iface *
+nwif_iface_create(struct nwif_state_sock *sock, const struct nlink_iface *attrs)
+{
+	struct nwif_iface *iface;
+
+	iface = malloc(sizeof(*iface));
+	if (!iface)
+		return NULL;
+
+	iface->state = nwif_iface_state_create(sock, attrs);
+	if (!iface->state) {
+		int err = errno;
+
+		free(iface);
+
+		errno = err;
+		return NULL;
+	}
+
+	iface->conf = NULL;
+
+	return iface;
+}
+
+void
+nwif_iface_destroy(struct nwif_iface *iface)
+{
+	nwif_assert(iface);
+	nwif_assert(iface->state);
+
+	if (iface->conf)
+		nwif_iface_conf_destroy(iface->conf);
+
+	nwif_iface_state_destroy(iface->state);
+
+	free(iface);
 }

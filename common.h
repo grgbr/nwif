@@ -3,6 +3,7 @@
 
 #include "nwif/config.h"
 #include <nwif/nwif.h>
+#include <karn/pavl.h>
 
 #if defined(CONFIG_NWIF_ASSERT)
 
@@ -17,33 +18,14 @@
 
 #endif /* defined(CONFIG_NWIF_ASSERT) */
 
-extern int
-nwif_iface_probe_sysid(const char *syspath);
-
-/******************************************************************************
- * Base interface state utils
- ******************************************************************************/
-
-struct nwif_iface_state {
-	int sys_id;
+enum nwif_class {
+	NWIF_IFACE_CLASS,
+	NWIF_ADDR_CLASS,
+	NWIF_ROUTE_CLASS,
+	NWIF_CLASS_NR
 };
 
-static inline int
-nwif_iface_state_get_id(const struct nwif_iface_state *state)
-{
-	nwif_assert(state);
-	nwif_assert(state->sys_id > 0);
-
-	return state->sys_id;
-}
-
-static inline void
-nwif_iface_state_init(struct nwif_iface_state *state, int sys_id)
-{
-	nwif_assert(state);
-	nwif_assert(sys_id > 0);
-
-	state->sys_id = sys_id;
-}
+extern int
+nwif_iface_probe_sysid(const char *syspath);
 
 #endif /* _NWIF_COMMON_H */

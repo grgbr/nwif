@@ -36,10 +36,10 @@ extern ssize_t
 nwif_ui_parse_iface_name(const char *arg);
 
 extern int
-nwif_ui_parse_oper_state(const char *arg, uint8_t *oper);
+nwif_ui_parse_admin_state(const char *arg, uint8_t *state);
 
 extern const char *
-nwif_ui_get_oper_state_label(uint8_t oper);
+nwif_ui_get_admin_state_label(uint8_t state);
 
 extern int
 nwif_ui_parse_mtu(const char *arg, uint32_t *mtu);

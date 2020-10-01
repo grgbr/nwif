@@ -4,6 +4,10 @@
 #include "iface_priv.h"
 #include <net/ethernet.h>
 
+/******************************************************************************
+ * Ethernet interface configuration handling
+ ******************************************************************************/
+
 struct nwif_ether_conf_data {
 	struct nwif_iface_conf_data iface;
 	char                        syspath[UNET_IFACE_SYSPATH_MAX];
@@ -47,5 +51,27 @@ nwif_ether_conf_clear_hwaddr(struct nwif_ether_conf *conf);
 
 extern struct nwif_ether_conf *
 nwif_ether_conf_create(const struct kvs_table *table);
+
+/******************************************************************************
+ * Ethernet interface state handling
+ ******************************************************************************/
+
+struct nwif_ether_state {
+	struct nwif_iface_state iface;
+	struct ether_addr       hwaddr;
+};
+
+#define nwif_ether_state_assert(_state) \
+	nwif_iface_state_assert(&(_state)->iface); \
+	nwif_assert(unet_hwaddr_is_laa(&(_state)->hwaddr)); \
+	nwif_assert(unet_hwaddr_is_ucast(&(_state)->hwaddr))
+
+static inline const struct ether_addr *
+nwif_iface_state_get_ucast_hwaddr(const struct nwif_ether_state *state)
+{
+	nwif_ether_state_assert(state);
+
+	return &state->hwaddr;
+}
 
 #endif /* _NWIF_ETHER_PRIV_H */

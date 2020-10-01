@@ -1,6 +1,10 @@
 #include "ether_priv.h"
 #include <string.h>
 
+/******************************************************************************
+ * Ethernet interface configuration handling
+ ******************************************************************************/
+
 #define nwif_ether_conf_assert_data(_data) \
 	nwif_assert((_data)->iface.type == NWIF_ETHER_IFACE_TYPE); \
 	nwif_assert(!nwif_iface_conf_data_has_attr(&(_data)->iface, \
@@ -152,345 +156,65 @@ nwif_ether_conf_create(const struct kvs_table *table)
 	return conf;
 }
 
-#if 0
+/******************************************************************************
+ * Ethernet interface state handling
+ ******************************************************************************/
 
-////////////////////////////////////////////////////////////////////////////////
+static bool
+nwif_ether_state_probe(const struct nlink_iface *attrs)
+{
+	nwif_assert(attrs);
+	nwif_assert(attrs->type == ARPHRD_ETHER);
 
-struct nwif_ether {
-	struct nwif_ether_conf  conf;
-	struct nwif_iface_state state;
-};
+	return !attrs->master;
+}
 
 static int
-nwif_ether_build_apply_request(struct nwif_ether *eif,
-                               struct nlmsghdr   *msg,
-                               struct nlink_sock *sock)
+nwif_ether_state_fill_attrs(struct nwif_iface_state  *iface,
+                            const struct nlink_iface *attrs)
 {
-	int                      ret;
-	const char              *name;
-	const struct ether_addr *addr;
-	uint32_t                 mtu;
-	uint8_t                  oper;
+	nwif_assert(iface);
+	nwif_assert(attrs);
+	nwif_assert(attrs->type == ARPHRD_ETHER);
 
-	nlink_iface_setup_msg(msg,
-	                      sock,
-	                      ARPHRD_ETHER,
-	                      nwif_iface_state_get_id(&eif->state));
+	if (!attrs->ucast_hwaddr ||
+	    unet_hwaddr_is_uaa(attrs->ucast_hwaddr) ||
+	    unet_hwaddr_is_mcast(attrs->ucast_hwaddr))
+		return -EADDRNOTAVAIL;
 
-	name = nwif_ether_conf_get_name(&eif->conf);
-	if (name) {
-		ret = nlink_iface_setup_msg_name(msg, name, strlen(name));
-		if (ret)
-			return ret;
-	}
-
-	addr = nwif_ether_conf_get_addr(&eif->conf);
-	if (addr) {
-		ret = nlink_iface_setup_msg_addr(msg, addr);
-		if (ret)
-			return ret;
-	}
-
-	ret = nwif_ether_conf_get_mtu(&eif->conf, &mtu);
-	if (!ret) {
-		ret = nlink_iface_setup_msg_mtu(msg, mtu);
-		if (ret)
-			return ret;
-	}
-	else if (ret != -ENODATA)
-		return ret;
-
-	ret = nwif_ether_conf_get_oper_state(&eif->conf, &oper);
-	if (!ret) {
-		ret = nlink_iface_setup_msg_oper_state(msg, oper);
-		if (ret)
-			return ret;
-	}
-	else if (ret != -ENODATA)
-		return ret;
+	((struct nwif_ether_state *) iface)->hwaddr = *attrs->ucast_hwaddr;
 
 	return 0;
 }
 
 static int
-nwif_ether_parse_apply_reply(const struct nlmsghdr *msg)
+nwif_ether_state_apply_conf(struct nwif_iface_state      *iface,
+                            struct nlmsghdr              *msg,
+                            const struct nwif_iface_conf *conf)
 {
-	int err;
-
-	err = nlink_parse_msg_head(msg);
-
-	return (err == -ENODATA) ? 0 : err;
-}
-
-struct nwif_ether *
-nwif_ether_create_from_conf(const struct nwif_iface_conf *conf)
-{
-	struct nwif_ether            *eif;
-	const struct nwif_ether_conf *econf = (struct nwif_ether_conf *)conf;
-	int                           err;
-
-	eif = malloc(sizeof(*eif));
-	if (!eif) {
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	eif->conf = *econf;
-
-	err = nwif_iface_probe_id(conf->sys_path);
-	if (err < 0)
-		goto free;
-
-	nwif_iface_state_init(&eif->state, err);
-
-	return eif;
-
-free:
-	free(eif);
-
-	errno = -err;
-	return NULL;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-static const struct nwif_ether_conf eth0 = {
-	.super = {
-		.attr_mask  = NWIF_NAME_ATTR | NWIF_MTU_ATTR | NWIF_OPER_STATE_ATTR,
-		.sys_path   = "platform/10013400.virtio_mmio/virtio0",
-		.type       = NWIF_ETHER_IFACE_TYPE,
-	},
-	.name               = "eth0ext",
-	.mtu                = 1500,
-	.oper_state         = IF_OPER_DOWN,
-};
-
-static const struct nwif_ether_conf eth1 = {
-	.super = {
-		.attr_mask  = NWIF_NAME_ATTR | NWIF_MTU_ATTR | NWIF_OPER_STATE_ATTR,
-		.sys_path   = "platform/10013600.virtio_mmio/virtio1",
-		.type       = NWIF_ETHER_IFACE_TYPE,
-	},
-	.name               = "eth1int",
-	.mtu                = 4000,
-	.oper_state         = IF_OPER_DOWN,
-};
-
-
-struct nwif_iface_conf_store {
-	struct nwif_iface_conf * ifaces[2];
-};
-
-static const struct nwif_iface_conf_store iface_conf_store = {
-	.ifaces = {
-		(struct nwif_iface_conf *)&eth0,
-		(struct nwif_iface_conf *)&eth1
-	}
-};
-
-unsigned int
-nwif_iface_conf_store_count(const struct nwif_iface_conf_store *store)
-{
-	return 2;
-}
-
-struct nwif_iface_conf_iter {
-	unsigned int curr;
-};
-
-struct nwif_iface_conf *
-nwif_iface_conf_iter_begin(struct nwif_iface_conf_iter        *iter,
-                           const struct nwif_iface_conf_store *store)
-{
-	iter->curr = 1;
-
-	return store->ifaces[0];
-}
-
-struct nwif_iface_conf *
-nwif_iface_conf_iter_next(struct nwif_iface_conf_iter        *iter,
-                          const struct nwif_iface_conf_store *store)
-{
-	if (iter->curr >= 2)
-		return NULL;
-
-	return store->ifaces[iter->curr++];
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-#include <utils/thread.h>
-
-static int
-nwif_send_msg_sync(const struct nlink_sock *sock, const struct nlmsghdr *msg)
-{
-	nwif_assert(sock);
+	nwif_ether_state_assert((struct nwif_ether_state *)iface);
 	nwif_assert(msg);
+	nwif_ether_conf_assert((struct nwif_ether_conf *)conf);
 
-	int ret;
+	const struct ether_addr       *hwaddr;
+	const struct nwif_ether_state *ether = (struct nwif_ether_state *)iface;
 
-	do {
-		ret = nlink_send_msg(sock, msg);
-		if (ret == -EAGAIN)
-			uthr_yield();
-	} while ((ret == -EAGAIN) || (ret == -EINTR));
+	hwaddr = nwif_ether_conf_get_hwaddr((struct nwif_ether_conf *)conf);
 
-	return ret;
+	if (hwaddr && memcmp(hwaddr, &ether->hwaddr, sizeof(*hwaddr)))
+		return nlink_iface_setup_msg_ucast_hwaddr(msg, hwaddr);
+
+	/*
+	 * Tell the caller no need to perform apply operation since no data were
+	 * modified.
+	 */
+	return -ECANCELED;
 }
 
-static ssize_t
-nwif_recv_msg_sync(const struct nlink_sock *sock, struct nlmsghdr *msg)
-{
-	nwif_assert(sock);
-	nwif_assert(msg);
-
-	ssize_t ret;
-
-	do {
-		ret = nlink_recv_msg(sock, msg);
-
-		if (ret == -EAGAIN)
-			uthr_yield();
-	} while ((ret == -EAGAIN) || (ret == -EINTR));
-
-	nwif_assert(ret);
-
-	return ret;
-}
-
-struct nwif_ether_xfer {
-	struct nwif_ether *eif;
-	uint32_t           seqno;
+const struct nwif_iface_state_impl nwif_ether_state_impl = {
+	.arp_type   = ARPHRD_ETHER,
+	.probe_type = nwif_ether_state_probe,
+	.size       = sizeof(struct nwif_ether_state),
+	.fill_attrs = nwif_ether_state_fill_attrs,
+	.apply_conf = nwif_ether_state_apply_conf
 };
-
-static int
-nwif_iface_apply_conf(const struct nwif_iface_conf_store *store,
-                      struct nlink_sock                  *sock,
-                      struct nlmsghdr                    *msg)
-{
-	struct nwif_iface_conf_iter  iter;
-	struct nwif_iface_conf      *conf;
-	int                          ret;
-	unsigned int                 cnt;
-	struct nwif_ether_xfer      *xfers;
-	unsigned int                 x = 0;
-
-	cnt = nwif_iface_conf_store_count(store);
-	if (!cnt)
-		return -ENOENT;
-
-	xfers = malloc(cnt * sizeof(*xfers));
-	if (!xfers)
-		return -errno;
-
-	for (conf = nwif_iface_conf_iter_begin(&iter, store);
-	     conf;
-	     conf = nwif_iface_conf_iter_next(&iter, store)) {
-		struct nwif_ether *eif;
-
-		eif = nwif_ether_create_from_conf(conf);
-		if (!eif) {
-			printf("failed to create ether interface: %s\n",
-			       strerror(errno));
-			continue;
-		}
-
-#warning register iface to repository !!
-
-		ret = nwif_ether_build_apply_request(eif, msg, sock);
-		if (ret) {
-			printf("failed to build ether interface config request: %s\n",
-			       strerror(-ret));
-			free(eif);
-			continue;
-		}
-
-		ret = nwif_send_msg_sync(sock, msg);
-		if (ret) {
-			printf("failed to transmit ether interface config request: %s\n",
-			       strerror(-ret));
-			free(eif);
-			uthr_yield();
-			continue;
-		}
-
-		xfers[x].eif = eif;
-		xfers[x].seqno = msg->nlmsg_seq;
-		x++;
-	}
-
-	if (!x) {
-		ret = -ENODEV;
-		goto free;
-	}
-
-	cnt = x;
-
-	do {
-		unsigned int c;
-
-		ret = nwif_recv_msg_sync(sock, msg);
-		if (ret < 0) {
-			printf("failed to fetch ether interface config reply: %s\n",
-			       strerror(-ret));
-			uthr_yield();
-			continue;
-		}
-
-		for (c = 0; c < cnt; c++) {
-			if (xfers[c].eif && (xfers[c].seqno == msg->nlmsg_seq))
-				break;
-		}
-		if (c == cnt) {
-			printf("unexpected ether interface config reply\n");
-			continue;
-		}
-
-		ret = nwif_ether_parse_apply_reply(msg);
-		if (ret)
-			printf("ether interface config reply parsing failed: %s\n",
-			       strerror(-ret));
-
-		xfers[c].eif = NULL;
-	} while (--x);
-
-free:
-	free(xfers);
-
-#warning destroy iface repository !!
-	return ret;
-}
-
-int
-main(int argc, char * const argv[])
-{
-	int                           ret;
-	struct nlink_sock             sock;
-	struct nlmsghdr              *msg;
-
-	ret = nlink_open_sock(&sock, NETLINK_ROUTE, 0);
-	if (ret)
-		goto out;
-
-	msg = nlink_alloc_msg();
-	if (!msg) {
-		ret = -ENOMEM;
-		goto close;
-	}
-
-	ret = nwif_iface_apply_conf(&iface_conf_store, &sock, msg);
-
-	nlink_free_msg(msg);
-
-close:
-	nlink_close_sock(&sock);
-
-out:
-	if (ret) {
-		printf("error: %s\n", strerror(-ret));
-		return EXIT_FAILURE;
-	}
-
-	return EXIT_SUCCESS;
-}
-#endif
