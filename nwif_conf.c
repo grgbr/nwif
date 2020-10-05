@@ -3,10 +3,14 @@
 #include "conf_priv.h"
 #include "iface_priv.h"
 #include <utils/path.h>
+#include <utils/signal.h>
 #include <clui/clui.h>
+#include <clui/shell.h>
 #include <string.h>
-
+#include <locale.h>
 #include <sys/stat.h>
+
+#define NWIF_CLUI_CONF_PROMPT "nwif_conf> "
 
 #define nwif_conf_clui_err(_parser, _error, _format, ...) \
 	clui_err(_parser, \
@@ -44,6 +48,18 @@ struct nwif_conf_clui_ctx {
 	};
 	struct nwif_iface_conf_attrs          iface_attrs;
 };
+
+static bool nwif_conf_clui_shell_mode = false;
+
+/* TODO: clean me up ?? get path field out of context structure ? */
+static void
+nwif_conf_clui_reset_ctx(struct nwif_conf_clui_ctx *ctx)
+{
+	const char *path = ctx->path;
+
+	memset(ctx, 0, sizeof(*ctx));
+	ctx->path = path;
+}
 
 static void
 nwif_conf_clui_sched_exec(void *ctx, nwif_conf_clui_exec_fn *exec)
@@ -529,7 +545,7 @@ static const struct clui_switch_parm nwif_conf_clui_iface_hwaddr_switch_parm = {
 #include "ether_priv.h"
 
 #define NWIF_CONF_CLUI_IFACE_NEW_ETHER_SYNOPSIS \
-	"    %1$s iface new ether <ETHER_NEW_SPEC> | help\n" \
+	"    %1$s%2$siface new ether <ETHER_NEW_SPEC> | help\n" \
 	"    Create a new ethernet interface.\n" \
 	"\n"
 
@@ -537,8 +553,8 @@ static const struct clui_switch_parm nwif_conf_clui_iface_hwaddr_switch_parm = {
 	"    <ETHER_NEW_SPEC> -- mandatory new ethernet interface specification.\n"
 
 #define NWIF_CONF_CLUI_IFACE_SET_ETHER_SYNOPSIS \
-	"    %1$s iface set <IFACE_ID> <ETHER_SET_SPEC>\n" \
-	"    %1$s iface set <IFACE_NAME> <ETHER_SET_SPEC>\n" \
+	"    %1$s%2$siface set <IFACE_ID> <ETHER_SET_SPEC>\n" \
+	"    %1$s%2$siface set <IFACE_NAME> <ETHER_SET_SPEC>\n" \
 	"    Setup attributes of ethernet interface specified by <IFACE_ID> or\n" \
 	"    <IFACE_NAME> according to <ETHER_SET_SPEC>.\n" \
 	"\n" \
@@ -547,8 +563,8 @@ static const struct clui_switch_parm nwif_conf_clui_iface_hwaddr_switch_parm = {
 	"    ETHER_SET_SPEC := [SYSPATH_SPEC] [NAME_SPEC] [STATE_SPEC] [MTU_SPEC] [HWADDR_SPEC]\n"
 
 #define NWIF_CONF_CLUI_IFACE_CLEAR_ETHER_SYNOPSIS \
-	"    %1$s iface clear <IFACE_ID> <ETHER_CLEAR_SPEC>\n" \
-	"    %1$s iface clear <IFACE_NAME> <ETHER_CLEAR_SPEC>\n" \
+	"    %1$s%2$siface clear <IFACE_ID> <ETHER_CLEAR_SPEC>\n" \
+	"    %1$s%2$siface clear <IFACE_NAME> <ETHER_CLEAR_SPEC>\n" \
 	"    Clear attribute(s) of ethernet interface specified by <IFACE_ID> or\n" \
 	"    <IFACE_NAME> according to <ETHER_CLEAR_SPEC>.\n" \
 	"\n" \
@@ -558,10 +574,10 @@ static const struct clui_switch_parm nwif_conf_clui_iface_hwaddr_switch_parm = {
 
 #define NWIF_CONF_CLUI_NEW_ETHER_HELP \
 	"Synopsis:\n" \
-	"    %1$s iface new ether <SYSPATH> [NAME_SPEC] [STATE_SPEC] [MTU_SPEC] [HWADDR_SPEC]\n" \
+	"    %1$s%2$siface new ether <SYSPATH> [NAME_SPEC] [STATE_SPEC] [MTU_SPEC] [HWADDR_SPEC]\n" \
 	"    Create a new ethernet interface.\n" \
 	"\n" \
-	"    %1$s iface new ether help\n" \
+	"    %1$s%2$siface new ether help\n" \
 	"    This help message.\n" \
 	"\n" \
 	"With:\n" \
@@ -767,7 +783,13 @@ nwif_conf_clui_new_ether_help(const struct clui_cmd    *cmd __unused,
                               const struct clui_parser *parser,
                               FILE                     *stdio)
 {
-	fprintf(stdio, NWIF_CONF_CLUI_NEW_ETHER_HELP, parser->argv0);
+	if (nwif_conf_clui_shell_mode)
+		fprintf(stdio, NWIF_CONF_CLUI_NEW_ETHER_HELP, "", "");
+	else
+		fprintf(stdio,
+		        NWIF_CONF_CLUI_NEW_ETHER_HELP,
+		        parser->argv0,
+		        " ");
 }
 
 static const struct clui_cmd nwif_conf_clui_new_ether_cmd = {
@@ -791,7 +813,7 @@ static const struct clui_cmd nwif_conf_clui_new_ether_cmd = {
 #define NWIF_CONF_CLUI_IFACE_NEW_HELP \
 	"Synopsis:\n" \
 	NWIF_CONF_CLUI_IFACE_NEW_ETHER_SYNOPSIS \
-	"    %1$s iface new help\n" \
+	"    %1$s%2$siface new help\n" \
 	"    This help message.\n" \
 	"\n" \
 	"Where:\n" \
@@ -837,7 +859,13 @@ nwif_conf_clui_iface_new_help(const struct clui_cmd    *cmd __unused,
                               const struct clui_parser *parser,
                               FILE                     *stdio)
 {
-	fprintf(stdio, NWIF_CONF_CLUI_IFACE_NEW_HELP, parser->argv0);
+	if (nwif_conf_clui_shell_mode)
+		fprintf(stdio, NWIF_CONF_CLUI_IFACE_NEW_HELP, "", "");
+	else
+		fprintf(stdio,
+		        NWIF_CONF_CLUI_IFACE_NEW_HELP,
+		        parser->argv0,
+		        " ");
 }
 
 static const struct clui_cmd nwif_conf_clui_iface_new_cmd = {
@@ -852,7 +880,7 @@ static const struct clui_cmd nwif_conf_clui_iface_new_cmd = {
 #define NWIF_CONF_CLUI_IFACE_SET_HELP \
 	"Synopsis:\n" \
 	NWIF_CONF_CLUI_IFACE_SET_ETHER_SYNOPSIS \
-	"    %1$s iface set help\n" \
+	"    %1$s%2$siface set help\n" \
 	"    This help message.\n" \
 	"\n" \
 	"With:\n" \
@@ -1112,7 +1140,13 @@ nwif_conf_clui_iface_set_help(const struct clui_cmd    *cmd __unused,
                               const struct clui_parser *parser,
                               FILE                     *stdio)
 {
-	fprintf(stdio, NWIF_CONF_CLUI_IFACE_SET_HELP, parser->argv0);
+	if (nwif_conf_clui_shell_mode)
+		fprintf(stdio, NWIF_CONF_CLUI_IFACE_SET_HELP, "", "");
+	else
+		fprintf(stdio,
+		        NWIF_CONF_CLUI_IFACE_SET_HELP,
+		        parser->argv0,
+		        " ");
 }
 
 static const struct clui_cmd nwif_conf_clui_iface_set_cmd = {
@@ -1127,7 +1161,7 @@ static const struct clui_cmd nwif_conf_clui_iface_set_cmd = {
 #define NWIF_CONF_CLUI_IFACE_CLEAR_HELP \
 	"Synopsis:\n" \
 	NWIF_CONF_CLUI_IFACE_CLEAR_ETHER_SYNOPSIS \
-	"    %1$s iface set help\n" \
+	"    %1$s%2$siface set help\n" \
 	"    This help message.\n" \
 	"\n" \
 	"With:\n" \
@@ -1353,7 +1387,13 @@ nwif_conf_clui_iface_clear_help(const struct clui_cmd    *cmd __unused,
                                 const struct clui_parser *parser,
                                 FILE                     *stdio)
 {
-	fprintf(stdio, NWIF_CONF_CLUI_IFACE_CLEAR_HELP, parser->argv0);
+	if (nwif_conf_clui_shell_mode)
+		fprintf(stdio, NWIF_CONF_CLUI_IFACE_CLEAR_HELP, "", "");
+	else
+		fprintf(stdio,
+		        NWIF_CONF_CLUI_IFACE_CLEAR_HELP,
+		        parser->argv0,
+		        " ");
 }
 
 static const struct clui_cmd nwif_conf_clui_iface_clear_cmd = {
@@ -1367,14 +1407,14 @@ static const struct clui_cmd nwif_conf_clui_iface_clear_cmd = {
 
 #define NWIF_CONF_CLUI_IFACE_SHOW_HELP \
 	"Synopsis:\n" \
-	"    %1$s iface show <IFACE_ID>\n" \
-	"    %1$s iface show <IFACE_NAME>\n" \
+	"    %1$s%2$siface show <IFACE_ID>\n" \
+	"    %1$s%2$siface show <IFACE_NAME>\n" \
 	"    Show attributes of interface specified by <IFACE_ID> or <IFACE_NAME>.\n" \
 	"\n" \
-	"    %1$s iface show [all]\n" \
+	"    %1$s%2$siface show [all]\n" \
 	"    Show attributes of all interfaces.\n" \
 	"\n" \
-	"    %1$s iface show help\n" \
+	"    %1$s%2$siface show help\n" \
 	"    This help message.\n" \
 	"\n" \
 	"Where:\n" \
@@ -1692,7 +1732,13 @@ nwif_conf_clui_iface_show_help(const struct clui_cmd    *cmd __unused,
                                const struct clui_parser *parser,
                                FILE                     *stdio)
 {
-	fprintf(stdio, NWIF_CONF_CLUI_IFACE_SHOW_HELP, parser->argv0);
+	if (nwif_conf_clui_shell_mode)
+		fprintf(stdio, NWIF_CONF_CLUI_IFACE_SHOW_HELP, "", "");
+	else
+		fprintf(stdio,
+		        NWIF_CONF_CLUI_IFACE_SHOW_HELP,
+		        parser->argv0,
+		        " ");
 }
 
 static const struct clui_cmd nwif_conf_clui_iface_show_cmd = {
@@ -1706,13 +1752,13 @@ static const struct clui_cmd nwif_conf_clui_iface_show_cmd = {
 
 #define NWIF_CONF_CLUI_IFACE_DEL_HELP \
 	"Synopsis:\n" \
-	"    %1$s iface del <IFACE_ID>\n" \
+	"    %1$s%2$siface del <IFACE_ID>\n" \
 	"    Delete interface specified by <IFACE_ID>.\n" \
 	"\n" \
-	"    %1$s iface del <IFACE_NAME>\n" \
+	"    %1$s%2$siface del <IFACE_NAME>\n" \
 	"    Delete interface specified by <IFACE_NAME>.\n" \
 	"\n" \
-	"    %1$s iface del help\n" \
+	"    %1$s%2$siface del help\n" \
 	"    This help message.\n" \
 	"\n" \
 	"Where:\n" \
@@ -1842,7 +1888,13 @@ nwif_conf_clui_iface_del_help(const struct clui_cmd    *cmd __unused,
                               const struct clui_parser *parser,
                               FILE                     *stdio)
 {
-	fprintf(stdio, NWIF_CONF_CLUI_IFACE_DEL_HELP, parser->argv0);
+	if (nwif_conf_clui_shell_mode)
+		fprintf(stdio, NWIF_CONF_CLUI_IFACE_DEL_HELP, "", "");
+	else
+		fprintf(stdio,
+		        NWIF_CONF_CLUI_IFACE_DEL_HELP,
+		        parser->argv0,
+		        " ");
 }
 
 static const struct clui_cmd nwif_conf_clui_iface_del_cmd = {
@@ -1856,22 +1908,22 @@ static const struct clui_cmd nwif_conf_clui_iface_del_cmd = {
 
 #define NWIF_CONF_CLUI_IFACE_HELP \
 	"Synopsis:\n" \
-	"    %1$s iface show [IFACE_SHOW_SPEC] | help\n" \
+	"    %1$s%2$siface show [IFACE_SHOW_SPEC] | help\n" \
 	"    Show attributes of interface according to [IFACE_SHOW_SPEC].\n" \
 	"\n" \
-	"    %1$s iface new <IFACE_NEW_SPEC> | help\n" \
+	"    %1$s%2$siface new <IFACE_NEW_SPEC> | help\n" \
 	"    Create new interface according to <IFACE_NEW_SPEC>.\n" \
 	"\n" \
-	"    %1$s iface set <IFACE_SET_SPEC> | help\n" \
+	"    %1$s%2$siface set <IFACE_SET_SPEC> | help\n" \
 	"    Setup interface attributes according to <IFACE_SET_SPEC>.\n" \
 	"\n" \
-	"    %1$s iface clear <IFACE_CLEAR_SPEC> | help\n" \
+	"    %1$s%2$siface clear <IFACE_CLEAR_SPEC> | help\n" \
 	"    Clear interface attributes according to <IFACE_CLEAR_SPEC>.\n" \
 	"\n" \
-	"    %1$s iface del <IFACE_DEL_SPEC> | help\n" \
+	"    %1$s%2$siface del <IFACE_DEL_SPEC> | help\n" \
 	"    Delete interface according to <IFACE_DEL_SPEC>.\n" \
 	"\n" \
-	"    %1$s iface help\n" \
+	"    %1$s%2$siface help\n" \
 	"    This help message.\n" \
 	"\n" \
 	"Where:\n" \
@@ -1948,7 +2000,10 @@ nwif_conf_clui_iface_help(const struct clui_cmd    *cmd __unused,
                           const struct clui_parser *parser,
                           FILE                     *stdio)
 {
-	fprintf(stdio, NWIF_CONF_CLUI_IFACE_HELP, parser->argv0);
+	if (nwif_conf_clui_shell_mode)
+		fprintf(stdio, NWIF_CONF_CLUI_IFACE_HELP, "", "");
+	else
+		fprintf(stdio, NWIF_CONF_CLUI_IFACE_HELP, parser->argv0, " ");
 }
 
 static const struct clui_cmd nwif_conf_clui_iface_cmd = {
@@ -1957,38 +2012,34 @@ static const struct clui_cmd nwif_conf_clui_iface_cmd = {
 };
 
 /******************************************************************************
- * Top-level command
+ * Shell command
  ******************************************************************************/
 
-#define NWIF_CONF_CLUI_HELP \
-	"Usage:\n" \
-	"    %1$s -- Manage nwif configuration.\n" \
-	"\n" \
+#define NWIF_CONF_CLUI_SHELL_HELP \
 	"Synopsis:\n" \
-	"    %1$s iface [OPTIONS] <IFACE_CMD> | help\n" \
+	"    iface <IFACE_CMD> | help\n" \
 	"    Perform interface(s) operation according to <IFACE_CMD> command.\n" \
 	"\n" \
-	"    %1$s help\n" \
-	"    This help message.\n" \
+	"    quit\n" \
+	"    Quit interactive shell.\n" \
 	"\n" \
-	"With [OPTIONS]:\n" \
-	"    -d | --dbdir <DBDIR_PATH> use DBDIR_PATH as pathname to configuration\n" \
-	"                              database directory.\n"
+	"    help\n" \
+	"    This help message.\n" \
 
 static void
-nwif_conf_clui_cmd_help(const struct clui_cmd    *cmd __unused,
-                        const struct clui_parser *parser,
-                        FILE                     *stdio)
+nwif_conf_clui_shell_cmd_help(const struct clui_cmd    *cmd __unused,
+                              const struct clui_parser *parser __unused,
+                              FILE                     *stdio)
 {
-	fprintf(stdio, NWIF_CONF_CLUI_HELP, parser->argv0);
+	fprintf(stdio, NWIF_CONF_CLUI_SHELL_HELP);
 }
 
 static int
-nwif_conf_clui_parse(const struct clui_cmd *cmd,
-                     struct clui_parser    *parser,
-                     int                    argc,
-                     char * const           argv[],
-                     void                  *ctx)
+nwif_conf_clui_parse_shell(const struct clui_cmd *cmd,
+                           struct clui_parser    *parser,
+                           int                    argc,
+                           char * const           argv[],
+                           void                  *ctx)
 {
 	nwif_ui_assert(ctx);
 
@@ -2004,6 +2055,89 @@ nwif_conf_clui_parse(const struct clui_cmd *cmd,
 		                      &argv[1],
 		                      ctx);
 	}
+	if (!strcmp(argv[0], "quit")) {
+		return -ESHUTDOWN;
+	}
+	else if (!strcmp(argv[0], "help")) {
+		nwif_conf_clui_sched_help(ctx, cmd);
+		return 0;
+	}
+	else
+		clui_err(parser, "unknown '%s' command.\n", argv[0]);
+
+help:
+	clui_help_cmd(cmd, parser, stderr);
+
+	return -EINVAL;
+}
+
+static const struct clui_cmd nwif_conf_clui_shell_cmd = {
+	.parse = nwif_conf_clui_parse_shell,
+	.help  = nwif_conf_clui_shell_cmd_help
+};
+
+/******************************************************************************
+ * Top-level command
+ ******************************************************************************/
+
+#define NWIF_CONF_CLUI_TOP_HELP \
+	"Usage:\n" \
+	"    %1$s -- Manage nwif configuration.\n" \
+	"\n" \
+	"Synopsis:\n" \
+	"    %1$s shell\n" \
+	"    Run in interactive shell mode.\n" \
+	"\n" \
+	"    %1$s[OPTIONS] iface <IFACE_CMD> | help\n" \
+	"    Perform interface(s) operation according to <IFACE_CMD> command.\n" \
+	"\n" \
+	"    %1$s help\n" \
+	"    This help message.\n" \
+	"\n" \
+	"With [OPTIONS]:\n" \
+	"    -d | --dbdir <DBDIR_PATH> use DBDIR_PATH as pathname to configuration\n" \
+	"                              database directory.\n"
+
+static void
+nwif_conf_clui_top_cmd_help(const struct clui_cmd    *cmd __unused,
+                            const struct clui_parser *parser,
+                            FILE                     *stdio)
+{
+	fprintf(stdio, NWIF_CONF_CLUI_TOP_HELP, parser->argv0);
+}
+
+static int
+nwif_conf_clui_parse_top(const struct clui_cmd *cmd,
+                         struct clui_parser    *parser,
+                         int                    argc,
+                         char * const           argv[],
+                         void                  *ctx)
+{
+	nwif_ui_assert(ctx);
+
+	if (argc < 1) {
+		clui_err(parser, "missing argument.\n");
+		goto help;
+	}
+
+	if (!strcmp(argv[0], "iface")) {
+		return clui_parse_cmd(&nwif_conf_clui_iface_cmd,
+		                      parser,
+		                      argc - 1,
+		                      &argv[1],
+		                      ctx);
+	}
+	else if ((argc == 1) && !strcmp(argv[0], "shell")) {
+		if (!isatty(STDIN_FILENO)) {
+			nwif_conf_clui_err(parser,
+			                   -ENOTTY,
+			                   "cannot run in shell mode\n");
+			return -ENOTTY;
+		}
+
+		nwif_conf_clui_shell_mode = true;
+		return 0;
+	}
 	else if (!strcmp(argv[0], "help")) {
 		nwif_conf_clui_sched_help(ctx, cmd);
 		return 0;
@@ -2017,16 +2151,16 @@ help:
 	return -EINVAL;
 }
 
-static const struct clui_cmd nwif_conf_clui_cmd = {
-	.parse = nwif_conf_clui_parse,
-	.help  = nwif_conf_clui_cmd_help
+static const struct clui_cmd nwif_conf_clui_top_cmd = {
+	.parse = nwif_conf_clui_parse_top,
+	.help  = nwif_conf_clui_top_cmd_help
 };
 
 static void
 nwif_conf_clui_opts_help(const struct clui_parser *parser,
                          FILE                     *stdio)
 {
-	fprintf(stdio, NWIF_CONF_CLUI_HELP, parser->argv0);
+	fprintf(stdio, NWIF_CONF_CLUI_TOP_HELP, parser->argv0);
 }
 
 static int
@@ -2070,28 +2204,106 @@ static const struct clui_opt_set nwif_conf_clui_opt_set = {
 	.help  = nwif_conf_clui_opts_help
 };
 
+static void
+nwif_conf_clui_handle_sig(int signo __unused)
+{
+	clui_shell_shutdown();
+}
+
+static void
+nwif_conf_clui_init_sigs(void)
+{
+	sigset_t         sigs;
+	struct sigaction act = {
+		.sa_handler = nwif_conf_clui_handle_sig,
+		.sa_flags   = 0
+	};
+
+	usig_emptyset(&sigs);
+	usig_addset(&sigs, SIGHUP);
+	usig_addset(&sigs, SIGINT);
+	usig_addset(&sigs, SIGQUIT);
+	usig_addset(&sigs, SIGTERM);
+
+	act.sa_mask = sigs;
+	usig_action(SIGHUP, &act, NULL);
+	usig_action(SIGINT, &act, NULL);
+	usig_action(SIGQUIT, &act, NULL);
+	usig_action(SIGTERM, &act, NULL);
+}
+
 int
 main(int argc, char * const argv[])
 {
 	struct clui_parser        parser;
 	struct nwif_conf_clui_ctx ctx = { 0, };
-	int                       err;
+	int                       ret;
 
-	err = clui_init(&parser,
-	                &nwif_conf_clui_opt_set,
-	                &nwif_conf_clui_cmd,
-	                argc,
-	                argv);
-	if (err)
+	setlocale(LC_ALL, "");
+
+	ret = clui_init(&parser, argc, argv);
+	if (ret)
 		return EXIT_FAILURE;
 
 	ctx.path = CONFIG_NWIF_LOCALSTATEDIR;
 
-	err = clui_parse(&parser, argc, argv, &ctx);
-	if (err)
+	ret = clui_parse_opts(&nwif_conf_clui_opt_set,
+	                      &parser,
+	                      argc,
+	                      argv,
+	                      &ctx);
+	if (ret < 0)
 		return EXIT_FAILURE;
 
-	err = ctx.exec(&ctx, &parser);
+	ret = clui_parse_cmd(&nwif_conf_clui_top_cmd,
+	                     &parser,
+	                     argc - ret,
+	                     &argv[ret],
+	                     &ctx);
+	if (ret < 0)
+		return EXIT_FAILURE;
 
-	return !err ? EXIT_SUCCESS : EXIT_FAILURE;
+	if (nwif_conf_clui_shell_mode) {
+		nwif_conf_clui_init_sigs();
+		clui_shell_init(NWIF_CLUI_CONF_PROMPT, true);
+
+		while (true) {
+			struct clui_shell_expr expr;
+
+			ret = clui_shell_read_expr(&expr);
+			if (ret == -ESHUTDOWN) {
+				/* Shell shutdown requested. */
+				ret = 0;
+				break;
+			}
+			else if (ret == -ENODATA) {
+				/* Empty input. */
+				continue;
+			}
+			else if (ret) {
+				/* Input life fetching error. */
+				break;
+			}
+
+			nwif_conf_clui_reset_ctx(&ctx);
+			ret = clui_parse_cmd(&nwif_conf_clui_shell_cmd,
+			                     &parser,
+			                     expr.nr,
+			                     expr.words,
+			                     &ctx);
+			if (!ret)
+				ctx.exec(&ctx, &parser);
+
+			clui_shell_free_expr(&expr);
+
+			if (ret == -ESHUTDOWN) {
+				ret = 0;
+				break;
+			}
+		}
+	}
+	else
+		ret = ctx.exec(&ctx, &parser);
+
+	return !ret ? EXIT_SUCCESS : EXIT_FAILURE;
 }

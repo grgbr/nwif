@@ -602,14 +602,14 @@ main(int argc, char * const argv[])
 	struct nwifd_repo        repo;
 	int                      ret;
 
-	ret = clui_init(&parser, &nwifd_clui_opt_set, NULL, argc, argv);
+	ret = clui_init(&parser, argc, argv);
 	if (ret)
 		return EXIT_FAILURE;
 
 	ctx.path = CONFIG_NWIF_LOCALSTATEDIR;
 
-	ret = clui_parse(&parser, argc, argv, &ctx);
-	if (ret) {
+	ret = clui_parse_opts(&nwifd_clui_opt_set, &parser, argc, argv, &ctx);
+	if (ret < 0) {
 		if (ret == -ENOEXEC)
 			/* User requested to display help message. */
 			return EXIT_SUCCESS;
